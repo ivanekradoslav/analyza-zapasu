@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background-color: #0b1210;
+  color: #e5e7eb;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3b34;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply btn bg-pitch-700 text-gray-100 hover:bg-pitch-700/70 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-gray-300 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-danger {
+    @apply btn bg-red-700/80 text-white hover:bg-red-600 disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .input {
+    @apply w-full rounded-md border border-white/10 bg-pitch-900 px-2.5 py-1.5 text-sm text-gray-100 outline-none focus:border-emerald-500;
+  }
+  .label {
+    @apply block text-xs font-medium text-gray-400 mb-1;
+  }
+  .card {
+    @apply rounded-lg border border-white/10 bg-pitch-800;
+  }
+}

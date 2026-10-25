@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analýza zápasu</title>
+    <script>
+      // Na GitHub Pages nevieme nastaviť COOP/COEP hlavičky zo servera,
+      // tak ich dorobí coi-serviceworker (potrebné pre SharedArrayBuffer / multithread ffmpeg.wasm).
+      // Lokálne (vite dev/preview) sú hlavičky už nastavené serverom, takže SW tam nie je nutný,
+      // ale nevadí, ak beží súbežne.
+      if (!window.crossOriginIsolated) {
+        navigator.serviceWorker?.register("coi-serviceworker.js");
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
