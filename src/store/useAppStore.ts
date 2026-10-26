@@ -42,6 +42,9 @@ interface AppState {
   setActiveDrawColor: (c: string) => void;
   activeStrokeWidth: number;
   setActiveStrokeWidth: (w: number) => void;
+  // bočný panel, do ktorého sa počas kreslenia vykreslia nástroje (portál)
+  drawingPanelEl: HTMLElement | null;
+  setDrawingPanelEl: (el: HTMLElement | null) => void;
 
   // Freeze-frame prehrávanie kresieb
   frozenDrawingId: string | null;
@@ -101,6 +104,8 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveDrawColor: (c) => set({ activeDrawColor: c }),
   activeStrokeWidth: 3,
   setActiveStrokeWidth: (w) => set({ activeStrokeWidth: w }),
+  drawingPanelEl: null,
+  setDrawingPanelEl: (el) => set({ drawingPanelEl: el }),
 
   frozenDrawingId: null,
   setFrozenDrawingId: (id) => set({ frozenDrawingId: id }),

@@ -17,7 +17,7 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<OverlayRect | null>(null);
-  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  const drawingPanelEl = useAppStore((s) => s.drawingPanelEl);
 
   const videoUrl = useAppStore((s) => s.videoUrl);
   const isDrawingMode = useAppStore((s) => s.isDrawingMode);
@@ -53,18 +53,21 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     return () => setVideoEl(null);
   }, [videoUrl, setVideoEl]);
 
-  // Kresby sa viažu na plochu samotného videa (bez čiernych pásov), inak by v exporte 1280×720 nesedeli.
+  // Video vyplní kontajner pri zachovaní pomeru strán (aj zväčšením nad natívnu veľkosť).
+  // Kresby sa viažu na túto plochu (bez čiernych pásov), inak by v exporte 1280×720 nesedeli.
   useEffect(() => {
     const container = containerRef.current;
     const v = videoRef.current;
     if (!container || !v) return;
     const measure = () => {
       if (!v.videoWidth) return setRect(null);
-      setRect({ left: v.offsetLeft, top: v.offsetTop, width: v.clientWidth, height: v.clientHeight });
+      const scale = Math.min(container.clientWidth / v.videoWidth, container.clientHeight / v.videoHeight);
+      const width = v.videoWidth * scale;
+      const height = v.videoHeight * scale;
+      setRect({ left: (container.clientWidth - width) / 2, top: (container.clientHeight - height) / 2, width, height });
     };
     const ro = new ResizeObserver(measure);
     ro.observe(container);
-    ro.observe(v);
     v.addEventListener("loadedmetadata", measure);
     measure();
     return () => {
@@ -187,7 +190,8 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
         <video
           ref={videoRef}
           src={videoUrl}
-          className="max-h-full max-w-full"
+          className={rect ? "absolute" : "max-h-full max-w-full"}
+          style={rect ?? undefined}
           onTimeUpdate={(e) => setPlaybackState({ currentTime: e.currentTarget.currentTime })}
           onLoadedMetadata={(e) => setPlaybackState({ duration: e.currentTarget.duration })}
           onPlay={() => setPlaybackState({ isPlaying: true })}
@@ -212,7 +216,7 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
           <DrawingEditOverlay
             projectId={projectId}
             rect={rect}
-            toolbarSlot={toolbarSlot}
+            toolbarSlot={drawingPanelEl}
             onClose={() => setDrawingMode(false)}
           />
         )}
@@ -222,8 +226,6 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
-
-      {isDrawingMode && <div ref={setToolbarSlot} />}
 
       <div className="card flex flex-wrap items-center gap-2 px-3 py-2">
         <button className="btn-ghost p-2" onClick={() => stepFrame(-1)} title=", – o snímku dozadu">

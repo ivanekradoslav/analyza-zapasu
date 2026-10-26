@@ -121,8 +121,10 @@ počas prehrávania klipu/playlistu.
   V režime Pohyblivá `useDrawingEditor` volá `onCommit` pri každej zmene od
   užívateľa → uloží/prepíše kľúčový bod na aktuálnom čase videa. Pri zmene času
   sa do editora načítajú interpolované tvary (pred prvým/po poslednom bode drží
-  krajný). Panel nástrojov sa vykresľuje portálom pod video (`toolbarSlot`),
-  aby nezakrýval záber.
+  krajný). Počas kreslenia MatchEditor nahradí záložky bočného panela prázdnym
+  `drawingPanelEl` (store) a nástroje sa tam vykreslia portálom; zoznam tagov
+  sa skryje, aby video dostalo celú výšku. Video sa vždy škáluje na celý
+  kontajner (aj nad natívnu veľkosť), plochu počíta VideoPlayer z rozmerov.
 - Klip z kresby: záložka Klipy → sekcia Kresby → „Klip“ (rozsah kresby ±3 s).
 
 ### Export (`src/lib/ffmpeg/exporter.ts`)

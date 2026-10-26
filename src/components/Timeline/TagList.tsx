@@ -38,7 +38,7 @@ export default function TagList({ projectId }: { projectId: string }) {
   }, [tagEvents, tagTypeMap, filterCategory, filterTeam, filterPlayer, filterHalf]);
 
   return (
-    <div className="card flex-1 min-h-0 flex flex-col">
+    <div className="card h-56 shrink-0 min-h-0 flex flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 p-2.5">
         <select className="input w-auto" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
           <option value="all">Všetky kategórie</option>
