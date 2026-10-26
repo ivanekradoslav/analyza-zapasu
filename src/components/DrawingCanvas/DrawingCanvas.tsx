@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import { controlPoints } from "@/components/DrawingCanvas/useDrawingEditor";
+import { controlPoints } from "@/lib/drawing/shapeGeometry";
 import type { DrawTool, Point, Shape } from "@/types";
 
 interface Props {

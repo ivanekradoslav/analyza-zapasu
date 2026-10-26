@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { newId } from "@/lib/utils/id";
+import { controlPoints, translateShape } from "@/lib/drawing/shapeGeometry";
 import type { Point, Shape, ShapeKind } from "@/types";
 
 const MULTI_POINT_TOOLS: ShapeKind[] = ["polyline", "zone"];
@@ -8,17 +9,6 @@ const BODY_HIT_PX = 10;
 const MIN_SIZE = 0.004;
 
 type MoveState = { shapeId: string; handle: number | "all"; last: Point; before: Shape[]; moved: boolean };
-
-export function controlPoints(shape: Shape): Point[] {
-  switch (shape.kind) {
-    case "ellipse":
-      return [shape.center];
-    case "text":
-      return [shape.position];
-    default:
-      return shape.points;
-  }
-}
 
 function setControlPoint(shape: Shape, index: number, p: Point): Shape {
   const clamped = { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
@@ -31,18 +21,6 @@ function setControlPoint(shape: Shape, index: number, p: Point): Shape {
       const points = shape.points.map((q, i) => (i === index ? clamped : q));
       return { ...shape, points } as Shape;
     }
-  }
-}
-
-function translate(shape: Shape, dx: number, dy: number): Shape {
-  const t = (p: Point) => ({ x: p.x + dx, y: p.y + dy });
-  switch (shape.kind) {
-    case "ellipse":
-      return { ...shape, center: t(shape.center) };
-    case "text":
-      return { ...shape, position: t(shape.position) };
-    default:
-      return { ...shape, points: shape.points.map(t) } as Shape;
   }
 }
 
@@ -234,7 +212,10 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
       if (MULTI_POINT_TOOLS.includes(tool) || tool === "text") return;
       const d = draftRef.current;
       setDraft(null);
-      if (d && !isDegenerate(d)) commit([...shapesRef.current, d]);
+      if (d && !isDegenerate(d)) {
+        commit([...shapesRef.current, d]);
+        setSelectedId(d.id);
+      }
     },
     [commit, setDraft]
   );
@@ -244,6 +225,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
     setDraft(null);
     if (d && (d.kind === "polyline" || d.kind === "zone") && d.points.length >= 2) {
       commit([...shapesRef.current, d]);
+      setSelectedId(d.id);
     }
   }, [commit, setDraft]);
 
@@ -255,7 +237,9 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
   const addText = useCallback(
     (position: Point, text: string, color: string, strokeWidth: number) => {
       if (!text.trim()) return;
-      commit([...shapesRef.current, { id: newId(), kind: "text", color, strokeWidth, position, text: text.trim(), fontSize: 4.5 }]);
+      const shape: Shape = { id: newId(), kind: "text", color, strokeWidth, position, text: text.trim(), fontSize: 4.5 };
+      commit([...shapesRef.current, shape]);
+      setSelectedId(shape.id);
     },
     [commit]
   );
@@ -297,7 +281,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
       setShapes(
         shapesRef.current.map((s) => {
           if (s.id !== m.shapeId) return s;
-          return m.handle === "all" ? translate(s, dx, dy) : setControlPoint(s, m.handle, point);
+          return m.handle === "all" ? translateShape(s, dx, dy) : setControlPoint(s, m.handle, point);
         })
       );
     },
