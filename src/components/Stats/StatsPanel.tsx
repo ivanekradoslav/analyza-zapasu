@@ -44,6 +44,19 @@ export default function StatsPanel({ projectId }: { projectId: string }) {
       .sort((a, b) => b.count - a.count);
   }, [tagEvents, tagTypeMap]);
 
+  const byTagTypeVsOpponent = useMemo(() => {
+    const m = new Map<string, { my: number; opponent: number }>();
+    tagEvents?.forEach((e) => {
+      const cur = m.get(e.tagTypeId) ?? { my: 0, opponent: 0 };
+      cur[e.team] += 1;
+      m.set(e.tagTypeId, cur);
+    });
+    return [...m.entries()]
+      .map(([id, counts]) => ({ type: tagTypeMap.get(id), ...counts }))
+      .filter((x) => x.type)
+      .sort((a, b) => b.my + b.opponent - (a.my + a.opponent));
+  }, [tagEvents, tagTypeMap]);
+
   const byPlayer = useMemo(() => {
     const m = new Map<string, number>();
     tagEvents?.forEach((e) => {
@@ -103,6 +116,18 @@ export default function StatsPanel({ projectId }: { projectId: string }) {
       </div>
 
       <div className="card p-3">
+        <h4 className="text-xs text-gray-500 mb-2">Porovnanie so súperom</h4>
+        <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
+          <span>Môj tím</span>
+          <span>Súper</span>
+        </div>
+        {byTagTypeVsOpponent.map(({ type, my, opponent }) => (
+          <VsRow key={type!.id} label={type!.name} my={my} opponent={opponent} />
+        ))}
+        {byTagTypeVsOpponent.length === 0 && <p className="text-sm text-gray-500">Žiadne dáta</p>}
+      </div>
+
+      <div className="card p-3">
         <h4 className="text-xs text-gray-500 mb-2">Podľa typu tagu</h4>
         {byTagType.map(({ type, count }) => (
           <StatRow key={type!.id} label={type!.name} count={count} color={type!.color} />
@@ -129,6 +154,24 @@ function StatRow({ label, count, color }: { label: string; count: number; color?
         {label}
       </span>
       <span className="font-medium text-gray-100">{count}</span>
+    </div>
+  );
+}
+
+function VsRow({ label, my, opponent }: { label: string; my: number; opponent: number }) {
+  const total = my + opponent;
+  const myPct = total === 0 ? 50 : (my / total) * 100;
+  return (
+    <div className="py-1.5">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium text-gray-100 w-6 text-left">{my}</span>
+        <span className="text-gray-300 flex-1 text-center truncate px-1">{label}</span>
+        <span className="font-medium text-gray-100 w-6 text-right">{opponent}</span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden bg-pitch-900 flex mt-1">
+        <div className="h-full bg-emerald-500" style={{ width: `${myPct}%` }} />
+        <div className="h-full bg-red-700/80" style={{ width: `${100 - myPct}%` }} />
+      </div>
     </div>
   );
 }
