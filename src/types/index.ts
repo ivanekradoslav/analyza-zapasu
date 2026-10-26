@@ -114,12 +114,25 @@ export type Shape =
   | ZoneShape
   | TextShape;
 
+export type DrawTool = ShapeKind | "move";
+
+// "freeze" = video sa na čase zastaví a kresba sa ukáže na durationSec.
+// "track" = kresba sa pohybuje s hráčmi počas prehrávania (interpolácia medzi kľúčovými bodmi).
+export type DrawingMode = "freeze" | "track";
+
+export interface Keyframe {
+  time: number; // sekundy vo videu
+  shapes: Shape[]; // rovnaké id tvaru naprieč kľúčovými bodmi = ten istý tvar
+}
+
 export interface Drawing {
   id: string;
   projectId: string;
-  timestamp: number; // čas vo videu, na ktorý je kresba naviazaná
-  durationSec: number; // ako dlho sa freeze-frame zobrazuje (default 4)
-  shapes: Shape[];
+  timestamp: number; // freeze: čas zastavenia; track: čas prvého kľúčového bodu
+  durationSec: number; // freeze: dĺžka zastavenia; track: ako dlho kresba zostane po poslednom kľúčovom bode
+  shapes: Shape[]; // track: tvary prvého kľúčového bodu
+  mode?: DrawingMode; // chýba = "freeze" (kresby zo staršej verzie)
+  keyframes?: Keyframe[]; // len pre "track", zoradené podľa času
   createdAt: number;
   updatedAt: number;
 }

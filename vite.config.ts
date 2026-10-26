@@ -11,17 +11,13 @@ export default defineConfig({
   base,
   plugins: [
     react(),
-    // Skopíruje ffmpeg.wasm core súbory (single-thread aj multithread) do dist,
-    // aby appka nebola závislá od CDN a fungovala aj offline / na GitHub Pages.
+    // Skopíruje ffmpeg.wasm core do dist, aby appka nebola závislá od CDN a fungovala aj na GitHub Pages.
+    // ESM build: @ffmpeg/ffmpeg spúšťa worker ako type "module", ten UMD core nevie načítať.
     viteStaticCopy({
       targets: [
         {
-          src: "node_modules/@ffmpeg/core/dist/umd/*",
+          src: "node_modules/@ffmpeg/core/dist/esm/*",
           dest: "ffmpeg/core",
-        },
-        {
-          src: "node_modules/@ffmpeg/core-mt/dist/umd/*",
-          dest: "ffmpeg/core-mt",
         },
       ],
     }),

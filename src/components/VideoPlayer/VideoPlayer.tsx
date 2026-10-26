@@ -3,7 +3,9 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/db";
 import { useAppStore } from "@/store/useAppStore";
 import DrawingCanvas from "@/components/DrawingCanvas/DrawingCanvas";
-import DrawingEditOverlay from "@/components/DrawingCanvas/DrawingEditOverlay";
+import DrawingEditOverlay, { type OverlayRect } from "@/components/DrawingCanvas/DrawingEditOverlay";
+import TrackedDrawingsOverlay from "@/components/VideoPlayer/TrackedDrawingsOverlay";
+import { isTrackDrawing } from "@/lib/drawing/keyframes";
 import { formatTime } from "@/lib/utils/time";
 import { Pencil, Pause, Play, ChevronLeft, ChevronRight, StepBack, StepForward } from "lucide-react";
 import clsx from "clsx";
@@ -14,7 +16,8 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 export default function VideoPlayer({ projectId }: { projectId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState({ width: 0, height: 0 });
+  const [rect, setRect] = useState<OverlayRect | null>(null);
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
 
   const videoUrl = useAppStore((s) => s.videoUrl);
   const isDrawingMode = useAppStore((s) => s.isDrawingMode);
@@ -50,15 +53,25 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     return () => setVideoEl(null);
   }, [videoUrl, setVideoEl]);
 
+  // Kresby sa viažu na plochu samotného videa (bez čiernych pásov), inak by v exporte 1280×720 nesedeli.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setDims({ width: el.clientWidth, height: el.clientHeight });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+    const container = containerRef.current;
+    const v = videoRef.current;
+    if (!container || !v) return;
+    const measure = () => {
+      if (!v.videoWidth) return setRect(null);
+      setRect({ left: v.offsetLeft, top: v.offsetTop, width: v.clientWidth, height: v.clientHeight });
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(container);
+    ro.observe(v);
+    v.addEventListener("loadedmetadata", measure);
+    measure();
+    return () => {
+      ro.disconnect();
+      v.removeEventListener("loadedmetadata", measure);
+    };
+  }, [videoUrl]);
 
   useEffect(() => {
     const v = videoRef.current;
@@ -81,7 +94,11 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     if (resumeAfterFreezeRef.current !== null) return;
 
     const hit = drawings.find(
-      (d) => currentTime >= d.timestamp && currentTime < d.timestamp + 0.18 && d.timestamp > lastFrozenAtRef.current + 0.5
+      (d) =>
+        !isTrackDrawing(d) &&
+        currentTime >= d.timestamp &&
+        currentTime < d.timestamp + 0.18 &&
+        d.timestamp > lastFrozenAtRef.current + 0.5
     );
     if (hit) {
       lastFrozenAtRef.current = hit.timestamp;
@@ -176,22 +193,26 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
           onPlay={() => setPlaybackState({ isPlaying: true })}
           onPause={() => setPlaybackState({ isPlaying: false })}
         />
-        {dims.width > 0 && frozenDrawing && !isDrawingMode && (
-          <DrawingCanvas
-            width={dims.width}
-            height={dims.height}
-            shapes={frozenDrawing.shapes}
-            draft={null}
-            editable={false}
-            activeTool="arrow"
-          />
+        {rect && !isDrawingMode && (
+          <div className="absolute" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}>
+            <TrackedDrawingsOverlay drawings={drawings ?? []} width={rect.width} height={rect.height} />
+            {frozenDrawing && (
+              <DrawingCanvas
+                width={rect.width}
+                height={rect.height}
+                shapes={frozenDrawing.shapes}
+                draft={null}
+                editable={false}
+                activeTool="arrow"
+              />
+            )}
+          </div>
         )}
-        {dims.width > 0 && isDrawingMode && (
+        {rect && isDrawingMode && (
           <DrawingEditOverlay
             projectId={projectId}
-            timestamp={currentTime}
-            width={dims.width}
-            height={dims.height}
+            rect={rect}
+            toolbarSlot={toolbarSlot}
             onClose={() => setDrawingMode(false)}
           />
         )}
@@ -201,6 +222,8 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
           </div>
         )}
       </div>
+
+      {isDrawingMode && <div ref={setToolbarSlot} />}
 
       <div className="card flex flex-wrap items-center gap-2 px-3 py-2">
         <button className="btn-ghost p-2" onClick={() => stepFrame(-1)} title=", – o snímku dozadu">

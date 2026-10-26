@@ -5,6 +5,7 @@ import TagList from "@/components/Timeline/TagList";
 import TaggingPanel from "@/components/Tagging/TaggingPanel";
 import ClipManager from "@/components/Clips/ClipManager";
 import PlaylistEditor from "@/components/Clips/PlaylistEditor";
+import DrawingList from "@/components/Clips/DrawingList";
 import StatsPanel from "@/components/Stats/StatsPanel";
 import RosterEditor from "@/components/Project/RosterEditor";
 import { useAppStore, type SidebarTab } from "@/store/useAppStore";
@@ -53,6 +54,7 @@ export default function MatchEditor({ projectId }: { projectId: string }) {
             {sidebarTab === "klipy" && (
               <div className="flex flex-col gap-3 h-full overflow-y-auto">
                 <ClipManager projectId={projectId} />
+                <DrawingList projectId={projectId} />
                 <PlaylistEditor projectId={projectId} />
               </div>
             )}

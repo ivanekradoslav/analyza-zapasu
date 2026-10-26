@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import type { Point, Shape, ShapeKind } from "@/types";
+import { controlPoints } from "@/components/DrawingCanvas/useDrawingEditor";
+import type { DrawTool, Point, Shape } from "@/types";
 
 interface Props {
   width: number;
@@ -8,12 +9,12 @@ interface Props {
   shapes: Shape[];
   draft: Shape | null;
   editable: boolean;
-  activeTool: ShapeKind;
+  activeTool: DrawTool;
+  selectedId?: string | null;
   onPointerDownPoint?: (p: Point) => void;
   onPointerMovePoint?: (p: Point) => void;
   onPointerUpPoint?: () => void;
   onDoubleClick?: () => void;
-  pendingTextPoint?: Point | null;
 }
 
 export default function DrawingCanvas({
@@ -23,12 +24,14 @@ export default function DrawingCanvas({
   draft,
   editable,
   activeTool,
+  selectedId,
   onPointerDownPoint,
   onPointerMovePoint,
   onPointerUpPoint,
   onDoubleClick,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const showHandles = editable && activeTool === "move";
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -39,9 +42,23 @@ export default function DrawingCanvas({
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const toRender = draft ? [...shapes, draft] : shapes;
-    drawShapesOnCanvas(ctx, toRender, width, height);
-  }, [shapes, draft, width, height]);
+    drawShapesOnCanvas(ctx, draft ? [...shapes, draft] : shapes, width, height);
+
+    if (showHandles) {
+      for (const shape of shapes) {
+        const selected = shape.id === selectedId;
+        for (const p of controlPoints(shape)) {
+          ctx.beginPath();
+          ctx.arc(p.x * width, p.y * height, selected ? 7 : 5, 0, Math.PI * 2);
+          ctx.fillStyle = selected ? "#facc15" : "rgba(255,255,255,0.9)";
+          ctx.strokeStyle = "rgba(0,0,0,0.8)";
+          ctx.lineWidth = 1.5;
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+  }, [shapes, draft, width, height, showHandles, selectedId]);
 
   function toNormalized(e: React.PointerEvent): Point {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -54,7 +71,12 @@ export default function DrawingCanvas({
   return (
     <canvas
       ref={canvasRef}
-      style={{ width, height, cursor: editable ? "crosshair" : "default", pointerEvents: editable ? "auto" : "none" }}
+      style={{
+        width,
+        height,
+        cursor: !editable ? "default" : showHandles ? "move" : "crosshair",
+        pointerEvents: editable ? "auto" : "none",
+      }}
       className="absolute left-0 top-0"
       onPointerDown={
         editable
@@ -67,8 +89,6 @@ export default function DrawingCanvas({
       onPointerMove={editable ? (e) => onPointerMovePoint?.(toNormalized(e)) : undefined}
       onPointerUp={editable ? () => onPointerUpPoint?.() : undefined}
       onDoubleClick={editable ? () => onDoubleClick?.() : undefined}
-      data-tool={activeTool}
-      data-editable={editable}
     />
   );
 }

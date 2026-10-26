@@ -1,23 +1,45 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useDrawingEditor } from "@/components/DrawingCanvas/useDrawingEditor";
 import DrawingCanvas from "@/components/DrawingCanvas/DrawingCanvas";
 import DrawingToolbar from "@/components/DrawingCanvas/DrawingToolbar";
 import { useAppStore } from "@/store/useAppStore";
-import { getDrawingAtTimestamp, upsertDrawing, deleteDrawing } from "@/lib/db/operations";
+import { findDrawingForEdit, upsertDrawing, deleteDrawing } from "@/lib/db/operations";
+import { isTrackDrawing, KEYFRAME_EPSILON, removeKeyframeAt, shapesAtTime, upsertKeyframe } from "@/lib/drawing/keyframes";
 import { newId } from "@/lib/utils/id";
-import type { Drawing, Point } from "@/types";
+import type { Drawing, DrawingMode, Keyframe, Point, Shape } from "@/types";
+
+export interface OverlayRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 interface Props {
   projectId: string;
-  timestamp: number;
-  width: number;
-  height: number;
+  rect: OverlayRect;
+  toolbarSlot: HTMLElement | null;
   onClose: () => void;
 }
 
-export default function DrawingEditOverlay({ projectId, timestamp, width, height, onClose }: Props) {
+function videoTime() {
+  const s = useAppStore.getState();
+  return s.videoEl?.currentTime ?? s.currentTime;
+}
+
+export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClose }: Props) {
   const [existing, setExisting] = useState<Drawing | null | undefined>(undefined);
+  const [mode, setMode] = useState<DrawingMode>("freeze");
   const [durationSec, setDurationSec] = useState(4);
+  const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
+  const keyframesRef = useRef<Keyframe[]>([]);
+  const modeRef = useRef<DrawingMode>("freeze");
+  const previewEndRef = useRef<number | null>(null);
+  const [textPrompt, setTextPrompt] = useState<Point | null>(null);
+
+  const currentTime = useAppStore((s) => s.currentTime);
+  const videoEl = useAppStore((s) => s.videoEl);
   const activeTool = useAppStore((s) => s.activeShapeTool);
   const setActiveTool = useAppStore((s) => s.setActiveShapeTool);
   const color = useAppStore((s) => s.activeDrawColor);
@@ -25,113 +47,234 @@ export default function DrawingEditOverlay({ projectId, timestamp, width, height
   const strokeWidth = useAppStore((s) => s.activeStrokeWidth);
   const setStrokeWidth = useAppStore((s) => s.setActiveStrokeWidth);
 
-  const editor = useDrawingEditor([]);
-  const [textPrompt, setTextPrompt] = useState<Point | null>(null);
+  const updateKeyframes = useCallback((fn: (k: Keyframe[]) => Keyframe[]) => {
+    const next = fn(keyframesRef.current);
+    keyframesRef.current = next;
+    setKeyframes(next);
+    return next;
+  }, []);
+
+  const handleCommit = useCallback(
+    (shapes: Shape[]) => {
+      if (modeRef.current !== "track") return;
+      updateKeyframes((k) => upsertKeyframe(k, videoTime(), shapes));
+    },
+    [updateKeyframes]
+  );
+
+  const editor = useDrawingEditor(handleCommit);
+  const { load } = editor;
+
+  function switchMode(m: DrawingMode) {
+    modeRef.current = m;
+    setMode(m);
+  }
 
   useEffect(() => {
-    getDrawingAtTimestamp(projectId, timestamp).then((d) => {
+    const t0 = videoTime();
+    findDrawingForEdit(projectId, t0).then((d) => {
       setExisting(d ?? null);
-      if (d) {
-        editor.load(d.shapes);
-        setDurationSec(d.durationSec);
+      if (!d) return;
+      setDurationSec(d.durationSec);
+      if (isTrackDrawing(d)) {
+        switchMode("track");
+        keyframesRef.current = d.keyframes;
+        setKeyframes(d.keyframes);
+        load(shapesAtTime(d.keyframes, t0));
+      } else {
+        load(d.shapes);
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, timestamp]);
+  }, [projectId, load]);
+
+  // Pohyblivá kresba: pri posune videa ukáž tvary v polohe pre aktuálny čas.
+  useEffect(() => {
+    if (mode !== "track" || keyframesRef.current.length === 0) return;
+    load(shapesAtTime(keyframesRef.current, currentTime));
+  }, [currentTime, mode, load]);
+
+  useEffect(() => {
+    const end = previewEndRef.current;
+    if (end !== null && currentTime >= end) {
+      previewEndRef.current = null;
+      videoEl?.pause();
+    }
+  }, [currentTime, videoEl]);
+
+  const { selectedId, removeShape } = editor;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (!selectedId || tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      removeShape(selectedId);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedId, removeShape]);
+
+  function handleModeChange(m: DrawingMode) {
+    if (m === mode) return;
+    if (m === "track") {
+      const shapes = editor.shapes;
+      updateKeyframes(() => (shapes.length > 0 ? [{ time: videoTime(), shapes }] : []));
+      setDurationSec(1);
+    } else {
+      setDurationSec(4);
+    }
+    switchMode(m);
+  }
 
   function handlePointerDown(p: Point) {
-    if (activeTool === "text") {
+    if (activeTool === "move") {
+      editor.beginMove(p, rect.width, rect.height);
+    } else if (activeTool === "text") {
       setTextPrompt(p);
-      return;
+    } else {
+      editor.startShape(activeTool, p, color, strokeWidth);
     }
-    editor.startShape(activeTool, p, color, strokeWidth);
   }
 
   function handlePointerMove(p: Point) {
-    editor.updateShapeDrag(p);
+    if (activeTool === "move") editor.updateMove(p);
+    else editor.updateShapeDrag(p);
   }
 
   function handlePointerUp() {
-    editor.endDrag(activeTool);
+    if (activeTool === "move") editor.endMove();
+    else if (activeTool !== "text") editor.endDrag(activeTool);
   }
 
   function handleDoubleClick() {
-    if (activeTool === "polyline" || activeTool === "zone") {
-      editor.finishMultiPoint();
-    }
+    if (activeTool === "polyline" || activeTool === "zone") editor.finishMultiPoint();
+  }
+
+  function seekTo(t: number) {
+    if (!videoEl) return;
+    videoEl.pause();
+    videoEl.currentTime = Math.min(videoEl.duration || Infinity, Math.max(0, t));
+  }
+
+  function handleDeleteKeyframe() {
+    const t = videoTime();
+    const next = updateKeyframes((k) => removeKeyframeAt(k, t));
+    load(next.length > 0 ? shapesAtTime(next, t) : []);
+  }
+
+  function handlePreview() {
+    const kfs = keyframesRef.current;
+    if (!videoEl || kfs.length < 2) return;
+    previewEndRef.current = kfs[kfs.length - 1].time + durationSec;
+    videoEl.currentTime = kfs[0].time;
+    void videoEl.play();
   }
 
   async function handleSave() {
-    const drawing: Drawing = {
+    const now = videoTime();
+    const base = {
       id: existing?.id ?? newId(),
       projectId,
-      timestamp,
       durationSec,
-      shapes: editor.shapes,
       createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
     };
-    if (editor.shapes.length === 0 && existing) {
-      await deleteDrawing(existing.id);
+    let drawing: Drawing | null = null;
+    if (mode === "track") {
+      const kfs = keyframesRef.current.filter((k) => k.shapes.length > 0);
+      if (kfs.length > 0) {
+        drawing = { ...base, mode: "track", keyframes: kfs, timestamp: kfs[0].time, shapes: kfs[0].shapes };
+      }
     } else if (editor.shapes.length > 0) {
-      await upsertDrawing(drawing);
+      const timestamp = existing && !isTrackDrawing(existing) ? existing.timestamp : now;
+      drawing = { ...base, mode: "freeze", timestamp, shapes: editor.shapes };
     }
+
+    if (drawing) await upsertDrawing(drawing);
+    else if (existing) await deleteDrawing(existing.id);
     onClose();
   }
 
   if (existing === undefined) return null;
 
+  const activeKeyframeIndex = keyframes.findIndex((k) => Math.abs(k.time - currentTime) <= KEYFRAME_EPSILON);
+
+  let hint: string;
+  if (activeTool === "move") {
+    hint = "Chyť tvar a potiahni. Za úchyt meníš tvar, inde presúvaš celý tvar. Delete zmaže vybraný.";
+  } else if (mode === "track" && keyframes.length > 0) {
+    hint = "Posuň video (+0.2s / +1s), prepni na Presunúť a potiahni tvar za hráčom — vznikne ďalší kľúčový bod.";
+  } else if (mode === "track") {
+    hint = "Pohyblivá kresba: nakresli tvar, napr. kruh pod hráča alebo líniu obrany.";
+  } else if (activeTool === "polyline" || activeTool === "zone") {
+    hint = "Klikaním pridávaš body, dvojklikom dokončíš tvar";
+  } else if (activeTool === "text") {
+    hint = "Klikni na miesto a napíš text";
+  } else {
+    hint = "Ťahaním nakresli tvar";
+  }
+
   return (
     <>
-      <DrawingCanvas
-        width={width}
-        height={height}
-        shapes={editor.shapes}
-        draft={editor.draft}
-        editable
-        activeTool={activeTool}
-        onPointerDownPoint={handlePointerDown}
-        onPointerMovePoint={handlePointerMove}
-        onPointerUpPoint={handlePointerUp}
-        onDoubleClick={handleDoubleClick}
-      />
-      {textPrompt && (
-        <TextInputPopup
-          point={textPrompt}
-          width={width}
-          height={height}
-          onConfirm={(text) => {
-            editor.startShape("text", textPrompt, color, strokeWidth);
-            editor.finishText(text);
-            setTextPrompt(null);
-          }}
-          onCancel={() => setTextPrompt(null)}
+      <div className="absolute" style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}>
+        <DrawingCanvas
+          width={rect.width}
+          height={rect.height}
+          shapes={editor.shapes}
+          draft={editor.draft}
+          editable
+          activeTool={activeTool}
+          selectedId={editor.selectedId}
+          onPointerDownPoint={handlePointerDown}
+          onPointerMovePoint={handlePointerMove}
+          onPointerUpPoint={handlePointerUp}
+          onDoubleClick={handleDoubleClick}
         />
-      )}
-      <DrawingToolbar
-        activeTool={activeTool}
-        onToolChange={setActiveTool}
-        color={color}
-        onColorChange={setColor}
-        strokeWidth={strokeWidth}
-        onStrokeWidthChange={setStrokeWidth}
-        durationSec={durationSec}
-        onDurationChange={setDurationSec}
-        canUndo={editor.canUndo}
-        canRedo={editor.canRedo}
-        onUndo={editor.undo}
-        onRedo={editor.redo}
-        onClear={editor.clearAll}
-        onSave={handleSave}
-        onCancel={onClose}
-        hint={
-          activeTool === "polyline" || activeTool === "zone"
-            ? "Klikaním pridávaš body, dvojklikom dokončíš tvar"
-            : activeTool === "text"
-            ? "Klikni na miesto a napíš text"
-            : "Ťahaním nakresli tvar"
-        }
-      />
+        {textPrompt && (
+          <TextInputPopup
+            point={textPrompt}
+            width={rect.width}
+            height={rect.height}
+            onConfirm={(text) => {
+              editor.addText(textPrompt, text, color, strokeWidth);
+              setTextPrompt(null);
+            }}
+            onCancel={() => setTextPrompt(null)}
+          />
+        )}
+      </div>
+      {toolbarSlot &&
+        createPortal(
+          <DrawingToolbar
+            mode={mode}
+            onModeChange={handleModeChange}
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            color={color}
+            onColorChange={setColor}
+            strokeWidth={strokeWidth}
+            onStrokeWidthChange={setStrokeWidth}
+            durationSec={durationSec}
+            onDurationChange={setDurationSec}
+            canUndo={editor.canUndo}
+            canRedo={editor.canRedo}
+            onUndo={editor.undo}
+            onRedo={editor.redo}
+            onClear={editor.clearAll}
+            hasSelection={!!editor.selectedId}
+            onDeleteSelected={() => editor.selectedId && editor.removeShape(editor.selectedId)}
+            onSave={handleSave}
+            onCancel={onClose}
+            hint={hint}
+            keyframeTimes={keyframes.map((k) => k.time)}
+            activeKeyframeIndex={activeKeyframeIndex}
+            onSeek={seekTo}
+            onStep={(d) => seekTo(videoTime() + d)}
+            onDeleteKeyframe={handleDeleteKeyframe}
+            onPreview={handlePreview}
+          />,
+          toolbarSlot
+        )}
     </>
   );
 }
@@ -151,10 +294,7 @@ function TextInputPopup({
 }) {
   const [value, setValue] = useState("");
   return (
-    <div
-      className="absolute z-30 flex gap-1"
-      style={{ left: point.x * width, top: point.y * height }}
-    >
+    <div className="absolute z-30 flex gap-1" style={{ left: point.x * width, top: point.y * height }}>
       <input
         autoFocus
         className="input w-40"

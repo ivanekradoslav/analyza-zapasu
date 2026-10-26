@@ -19,9 +19,13 @@ nikam neuploaduje.
 - **Timeline** – farebné značky tagov pod videom, klik = skok na čas; zoznam
   tagov s filtrom (kategória/tím/hráč/polčas), editácia a mazanie.
 - **Kreslenie** – šípka, čiara, prerušovaná čiara, kruh pod hráčom, spojnica
-  medzi hráčmi (napr. línia obrany), zóna, text. Kresba sa viaže na čas vo
-  videu – pri prehrávaní sa video na danom čase zastaví, kresba sa zobrazí na
-  nastavenú dĺžku (default 4 s) a potom sa pokračuje v prehrávaní.
+  medzi hráčmi (napr. línia obrany), zóna, text. Dva režimy:
+  - **Freeze** – video sa na danom čase zastaví, kresba sa zobrazí na
+    nastavenú dĺžku (default 4 s) a potom sa pokračuje v prehrávaní.
+  - **Pohyblivá** – kresba ide s hráčmi: nakresli tvar, posuň video
+    (+0.2s / +1s), nástrojom *Presunúť* potiahni tvar na novú pozíciu
+    hráča – každý posun uloží kľúčový bod a medzi nimi sa pohyb dopočíta.
+  Z ktorejkoľvek kresby vytvoríš klip jedným klikom (záložka Klipy → Kresby).
 - **Klipy a playlisty** – klip jedným klikom z tagu (−5 s/+5 s, upraviteľné)
   alebo manuálne cez I/O body; playlisty s poradím cez drag&drop.
 - **Export** – playlist sa dá exportovať do jedného MP4 (720p, H.264/AAC)

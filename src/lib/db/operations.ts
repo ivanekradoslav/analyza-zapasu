@@ -1,5 +1,6 @@
 import { db } from "@/lib/db/db";
 import { DEFAULT_TAGS } from "@/lib/db/defaultTags";
+import { isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { newId } from "@/lib/utils/id";
 import type {
   Clip,
@@ -131,9 +132,14 @@ export async function deleteDrawing(id: string) {
   await db.drawings.delete(id);
 }
 
-export async function getDrawingAtTimestamp(projectId: string, timestamp: number, epsilon = 0.4) {
+export async function findDrawingForEdit(projectId: string, timestamp: number, epsilon = 0.4) {
   const all = await db.drawings.where("projectId").equals(projectId).toArray();
-  return all.find((d) => Math.abs(d.timestamp - timestamp) <= epsilon);
+  const track = all.find((d) => {
+    if (!isTrackDrawing(d)) return false;
+    const { start, end } = trackWindow(d);
+    return timestamp >= start - epsilon && timestamp <= end + epsilon;
+  });
+  return track ?? all.find((d) => !isTrackDrawing(d) && Math.abs(d.timestamp - timestamp) <= epsilon);
 }
 
 // --- Klipy ---

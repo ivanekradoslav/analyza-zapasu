@@ -20,26 +20,12 @@ export async function getFFmpeg(onLog?: (msg: string) => void): Promise<FFmpeg> 
       ffmpeg.on("log", ({ message }) => onLog(message));
     }
 
-    const canUseMultithread = typeof window !== "undefined" && window.crossOriginIsolated;
-
-    try {
-      if (canUseMultithread) {
-        const base = coreBase("core-mt");
-        await ffmpeg.load({
-          coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-          wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
-          workerURL: await toBlobURL(`${base}/ffmpeg-core.worker.js`, "text/javascript"),
-        });
-      } else {
-        throw new Error("cross-origin isolation nedostupná, použijem single-thread core");
-      }
-    } catch {
-      const base = coreBase("core");
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
-      });
-    }
+    // Jednovláknové jadro: core-mt 0.12.x padá pri reálnom exporte ("function signature mismatch" v pthread workeri).
+    const base = coreBase("core");
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+    });
 
     ffmpegInstance = ffmpeg;
     return ffmpeg;

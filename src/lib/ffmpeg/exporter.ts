@@ -1,5 +1,6 @@
 import { getFFmpeg, mountInputFile, terminateFFmpeg, unmountInputFile } from "@/lib/ffmpeg/ffmpegClient";
 import { renderDrawingOverlayPng, renderTitleCardPng, EXPORT_WIDTH, EXPORT_HEIGHT } from "@/lib/ffmpeg/overlayRenderer";
+import { activeTrackShapes, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { formatMinute } from "@/lib/utils/time";
 import type { Clip, Drawing, Player, TagEvent, TagType } from "@/types";
 
@@ -19,6 +20,7 @@ export interface ExportProgress {
 
 const ENCODE_ARGS = ["-r", "25", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100"];
 const SCALE_FILTER = `scale=${EXPORT_WIDTH}:${EXPORT_HEIGHT}:force_original_aspect_ratio=decrease,pad=${EXPORT_WIDTH}:${EXPORT_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+const TRACK_FPS = 25;
 
 export class ExportCancelled extends Error {}
 
@@ -52,10 +54,19 @@ export class PlaylistExporter {
     const tagEventMap = new Map(input.tagEvents.map((e) => [e.id, e]));
     const playerMap = new Map(input.players.map((p) => [p.id, p]));
 
+    const freezeDrawings = input.drawings.filter((d) => !isTrackDrawing(d));
+    const trackDrawings = input.drawings.filter(isTrackDrawing);
+    const tracksInClip = (clip: Clip) =>
+      trackDrawings.filter((d) => {
+        const w = trackWindow(d);
+        return w.end >= clip.inPoint && w.start <= clip.outPoint;
+      });
+
     // Celkový počet ffmpeg krokov pre progress bar (hrubý odhad).
     let totalSteps = input.clips.length * 2 + 1; // trim + title per klip + finálny concat
     for (const clip of input.clips) {
-      const n = input.drawings.filter((d) => d.timestamp >= clip.inPoint && d.timestamp <= clip.outPoint).length;
+      if (tracksInClip(clip).length > 0) totalSteps += 1;
+      const n = freezeDrawings.filter((d) => d.timestamp >= clip.inPoint && d.timestamp <= clip.outPoint).length;
       totalSteps += n * 4; // extract frame, overlay png, still video, (part pred/za sa počíta nižšie)
       if (n > 0) totalSteps += n + 1 + 1; // partA/partB segmenty + concat klipu
     }
@@ -84,11 +95,49 @@ export class PlaylistExporter {
       report(`Strihám klip ${i + 1}/${input.clips.length}`);
       this.checkCancelled();
 
+      let sourceFile = baseFile;
+      const clipTracks = tracksInClip(clip);
+      if (clipTracks.length > 0) {
+        const clipDuration = clip.outPoint - clip.inPoint;
+        const winStart = Math.max(0, Math.min(...clipTracks.map((d) => trackWindow(d).start)) - clip.inPoint);
+        const winEnd = Math.min(clipDuration, Math.max(...clipTracks.map((d) => trackWindow(d).end)) - clip.inPoint);
+        const frameCount = Math.max(1, Math.ceil((winEnd - winStart) * TRACK_FPS));
+        const frameName = (f: number) => `trk_${i}_${String(f).padStart(5, "0")}.png`;
+
+        for (let f = 0; f < frameCount; f++) {
+          this.checkCancelled();
+          const t = clip.inPoint + winStart + f / TRACK_FPS;
+          await ffmpeg.writeFile(frameName(f), await renderDrawingOverlayPng(activeTrackShapes(clipTracks, t)));
+          if (f % TRACK_FPS === 0) {
+            onProgress({
+              fraction: Math.min(0.98, doneSteps / totalSteps),
+              label: `Kreslím pohyblivé kresby v klipe ${i + 1} (${f}/${frameCount})`,
+            });
+          }
+        }
+
+        const trackedFile = `clip_${i}_tracked.mp4`;
+        // Sekvencia sa posunie na začiatok okna; po jej konci overlay púšťa video ďalej bez kresby.
+        await ffmpeg.exec([
+          "-i", baseFile,
+          "-framerate", String(TRACK_FPS),
+          "-i", `trk_${i}_%05d.png`,
+          "-filter_complex", `[1:v]setpts=PTS-STARTPTS+${winStart.toFixed(3)}/TB[ov];[0:v][ov]overlay=0:0:eof_action=pass[v]`,
+          "-map", "[v]",
+          "-map", "0:a?",
+          ...ENCODE_ARGS,
+          trackedFile,
+        ]);
+        for (let f = 0; f < frameCount; f++) await ffmpeg.deleteFile(frameName(f));
+        report(`Vypaľujem pohyblivé kresby ${i + 1}/${input.clips.length}`);
+        sourceFile = trackedFile;
+      }
+
       const titleLines = buildTitleLines(clip, tagEventMap, tagTypeMap, playerMap);
       const titlePng = await renderTitleCardPng(titleLines);
       await ffmpeg.writeFile(`title_${i}.png`, titlePng);
       await ffmpeg.exec([
-        "-i", baseFile,
+        "-i", sourceFile,
         "-i", `title_${i}.png`,
         "-filter_complex", "overlay=0:0:enable='between(t,0,2.5)'",
         "-c:a", "copy",
@@ -96,7 +145,7 @@ export class PlaylistExporter {
       ]);
       report(`Vkladám titulok ${i + 1}/${input.clips.length}`);
 
-      const clipDrawings = input.drawings
+      const clipDrawings = freezeDrawings
         .filter((d) => d.timestamp >= clip.inPoint && d.timestamp <= clip.outPoint)
         .sort((a, b) => a.timestamp - b.timestamp);
 

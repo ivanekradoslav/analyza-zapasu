@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/db";
 import { useAppStore } from "@/store/useAppStore";
 import { formatTime } from "@/lib/utils/time";
+import { drawingSpan, isTrackDrawing } from "@/lib/drawing/keyframes";
 import { useMemo, useRef } from "react";
 import type { TagType } from "@/types";
 
@@ -60,17 +61,29 @@ export default function Timeline({ projectId }: { projectId: string }) {
           })}
         {duration > 0 &&
           drawings?.map((d) => {
-            const pct = (d.timestamp / duration) * 100;
+            const { start, end } = drawingSpan(d);
+            const seek = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              requestSeek(start);
+            };
+            if (isTrackDrawing(d)) {
+              return (
+                <div
+                  key={d.id}
+                  title={`Pohyblivá kresba · ${formatTime(start)}–${formatTime(end)}`}
+                  className="absolute bottom-0 h-1.5 min-w-[6px] rounded-sm bg-amber-400/80 border border-black/40"
+                  style={{ left: `${(start / duration) * 100}%`, width: `${((end - start) / duration) * 100}%` }}
+                  onClick={seek}
+                />
+              );
+            }
             return (
               <div
                 key={d.id}
-                title={`Kresba · ${formatTime(d.timestamp)}`}
+                title={`Kresba · ${formatTime(start)}`}
                 className="absolute bottom-0 h-2 w-2 -ml-1 rounded-full bg-amber-400 border border-black/40"
-                style={{ left: `${pct}%` }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  requestSeek(d.timestamp);
-                }}
+                style={{ left: `${(start / duration) * 100}%` }}
+                onClick={seek}
               />
             );
           })}

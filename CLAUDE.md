@@ -12,8 +12,10 @@ Webová appka na video analýzu futbalových zápasov, štýl Hudl/Once:
 - Projekty (zápas, súper, dátum, súťaž, súpiska), autosave do IndexedDB.
 - Tagovanie herných fáz/udalostí klávesovými skratkami, s tímom/hráčom/polčasom.
 - Timeline s farebnými značkami + filtrovateľný zoznam tagov.
-- Kreslenie na zastavený záber (šípky, čiary, kruhy, spojnice, zóny, text),
-  s "freeze-frame" prehrávaním kresby počas playbacku.
+- Kreslenie (šípky, čiary, kruhy, spojnice, zóny, text) v dvoch režimoch:
+  **Freeze** (video sa zastaví a ukáže kresbu) a **Pohyblivá** (kresba sa
+  pohybuje s hráčmi počas prehrávania, interpolácia medzi kľúčovými bodmi).
+  Tvary sa dajú dodatočne presúvať nástrojom Presunúť.
 - Klipy (z tagu alebo manuálne cez I/O body) a playlisty (drag&drop poradie).
 - Export playlistu do jedného MP4 (720p H.264/AAC) cez ffmpeg.wasm, s vypálenými
   kresbami a krátkym titulkom na začiatku klipu.
@@ -28,10 +30,14 @@ Webová appka na video analýzu futbalových zápasov, štýl Hudl/Once:
 - **Dexie (IndexedDB)** + `dexie-react-hooks` (`useLiveQuery`) – perzistentné
   dáta (projekty, súpiska, tagy, kresby, klipy, playlisty). Komponenty čítajú
   dáta reaktívne priamo z DB, nie je potrebný žiadny ďalší cache layer.
-- **ffmpeg.wasm 0.12** (`@ffmpeg/ffmpeg`, `@ffmpeg/core`, `@ffmpeg/core-mt`) –
-  strih a export. Core súbory sa buildujú lokálne do appky (vite-plugin-static-copy
-  kopíruje `node_modules/@ffmpeg/core*/dist/umd` do `dist/ffmpeg/...`), appka
-  teda nezávisí od CDN.
+- **ffmpeg.wasm 0.12** (`@ffmpeg/ffmpeg`, `@ffmpeg/core`) – strih a export.
+  Core sa builduje lokálne do appky (vite-plugin-static-copy kopíruje
+  `node_modules/@ffmpeg/core/dist/esm` do `dist/ffmpeg/core`), appka teda
+  nezávisí od CDN. **Musí to byť ESM build** – `@ffmpeg/ffmpeg` spúšťa worker
+  ako `type: "module"`, ten UMD core nenačíta ("failed to import ffmpeg-core.js").
+  **Len jednovláknové jadro** – `@ffmpeg/core-mt` 0.12.10 padá pri reálnom
+  exporte ("function signature mismatch" v pthread workeri). Balík core-mt
+  zostal v devDependencies, ale nepoužíva sa.
 - **@dnd-kit** – drag&drop poradie klipov v playliste.
 - Video súbor **sa nikdy neukladá do IndexedDB** – je príliš veľký. Pri exporte
   sa veľký súbor mountuje do ffmpeg.wasm cez `WORKERFS` (`ffmpeg.mount`), takže
@@ -50,11 +56,18 @@ Project 1---* Playlist (clipIds: string[] – poradie je poradie prehrávania/ex
 ```
 
 Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text`),
-súradnice **normalizované 0..1** voči rozmerom videa – vďaka tomu je kresba
-nezávislá od veľkosti okna/exportného rozlíšenia. Vykresľovanie je v
-`src/lib/drawing/renderShapes.ts` – **jedna funkcia sa používa na živé
-prekrytie videa aj na generovanie PNG pre export**, takže export vizuálne
-zodpovedá tomu, čo užívateľ videl v appke.
+súradnice **normalizované 0..1** voči ploche samotného videa (bez čiernych
+pásov – VideoPlayer meria `offsetLeft/Top/clientWidth/Height` elementu `<video>`
+a všetky prekrytia kladie presne naň). Vďaka tomu kresba sedí aj v exporte
+1280×720. Vykresľovanie je v `src/lib/drawing/renderShapes.ts` – **jedna
+funkcia sa používa na živé prekrytie videa aj na generovanie PNG pre export**.
+
+Drawing má `mode`:
+- `"freeze"` (alebo chýba – staršie dáta): `timestamp` + `shapes` + `durationSec` zastavenia.
+- `"track"`: `keyframes: { time, shapes }[]` zoradené podľa času. Tvar s rovnakým
+  `id` v susedných kľúčových bodoch sa lineárne interpoluje (`src/lib/drawing/keyframes.ts`).
+  Viditeľná je od prvého kľúčového bodu po posledný + `durationSec` (držanie).
+  `timestamp`/`shapes` = prvý kľúčový bod (pre zoradenie a kompatibilitu).
 
 ## Architektúra komponentov
 
@@ -94,15 +107,32 @@ je to ten istý mechanizmus (`startPlayQueue([clip])` vs. `startPlayQueue(clips)
 ### Freeze-frame kresby pri prehrávaní
 
 `VideoPlayer` má `useLiveQuery` na `drawings` projektu. Pri `timeupdate` ak
-`currentTime` prejde cez `drawing.timestamp` (a nejde o kreslenie), video sa
-zapauzuje, kresba sa zobrazí `durationSec` sekúnd (reálny `setTimeout`), potom
-sa video pustí ďalej. Toto funguje rovnako počas normálneho prehrávania aj
+`currentTime` prejde cez `drawing.timestamp` freeze kresby (a nejde o kreslenie),
+video sa zapauzuje, kresba sa zobrazí `durationSec` sekúnd (reálny `setTimeout`),
+potom sa video pustí ďalej. Toto funguje rovnako počas normálneho prehrávania aj
 počas prehrávania klipu/playlistu.
+
+### Pohyblivé kresby
+
+- Prehrávanie: `TrackedDrawingsOverlay` prekresľuje v každom `requestAnimationFrame`
+  podľa `video.currentTime` (timeupdate chodí len ~4×/s, to by sekalo).
+- Editor (`DrawingEditOverlay`): pri otvorení nájde kresbu na čase
+  (`findDrawingForEdit` – pohyblivú, ak je čas v jej rozsahu, inak freeze ±0,4 s).
+  V režime Pohyblivá `useDrawingEditor` volá `onCommit` pri každej zmene od
+  užívateľa → uloží/prepíše kľúčový bod na aktuálnom čase videa. Pri zmene času
+  sa do editora načítajú interpolované tvary (pred prvým/po poslednom bode drží
+  krajný). Panel nástrojov sa vykresľuje portálom pod video (`toolbarSlot`),
+  aby nezakrýval záber.
+- Klip z kresby: záložka Klipy → sekcia Kresby → „Klip“ (rozsah kresby ±3 s).
 
 ### Export (`src/lib/ffmpeg/exporter.ts`)
 
 Pre každý klip v playliste:
 1. Strih + scale na 1280×720 + re-encode (libx264/aac) → `clip_i_base.mp4`.
+1b. Ak do klipu zasahujú pohyblivé kresby: pre okno, kde sú viditeľné, sa
+   vyrenderuje sekvencia priehľadných PNG (25 fps, `trk_i_%05d.png`) a prekryje
+   sa cez video (`setpts` posun na začiatok okna, `overlay=eof_action=pass`)
+   → `clip_i_tracked.mp4`. PNG sa potom zmažú z FS.
 2. Vypálenie titulku (PNG canvas prekrytie prvé ~2.5s) → `clip_i_titled.mp4`.
 3. Ak klip obsahuje kresby (timestamp v rozsahu klipu): klip sa rozdelí na
    segmenty (normálne úseky + "freeze" úseky), freeze úsek = extrahovaná
@@ -143,9 +173,9 @@ CI prostredí) – treba ho overiť manuálne v reálnom browseri.
   (Vite `base`), deploy cez `actions/deploy-pages`.
 - `.github/workflows/ci.yml` – build + smoke test na každý PR/push.
 - GitHub Pages nevie nastaviť COOP/COEP hlavičky zo servera → `public/coi-serviceworker.js`
-  (registrovaný v `index.html`) ich dorobí v browseri, takže multithread
-  ffmpeg.wasm (SharedArrayBuffer) funguje aj tam. Lokálne (`vite dev`/`preview`)
-  sú hlavičky nastavené priamo v `vite.config.ts`.
+  (registrovaný v `index.html`) ich dorobí v browseri. Jednovláknový ffmpeg ich
+  nepotrebuje, sú tam kvôli prípadnému návratu k core-mt. Lokálne
+  (`vite dev`/`preview`) sú hlavičky nastavené priamo v `vite.config.ts`.
 - Pred prvým push treba v repe zapnúť **Settings → Pages → Source: GitHub Actions**.
 
 ## Known limitations / vedomé zjednodušenia Fázy 1
@@ -156,20 +186,26 @@ CI prostredí) – treba ho overiť manuálne v reálnom browseri.
 - Minúta zápasu v 2. polčase nerieši nadstavený čas 1. polčasu (jednoduchý model).
 - Kresba sa viaže na najbližší existujúci čas v okne ±0.4s (viacero kresieb
   tesne pri sebe sa môžu prepísať – vhodné pre MVP, nie pre husté kreslenie).
+  Dve pohyblivé kresby sa nemajú časovo prekrývať – editor otvorí tú prvú.
+- Export je jednovláknový (~1–2× dĺžka klipov). Pohyblivé kresby sa vypaľujú
+  ako 25 fps sekvencia PNG, dlhé okná (desiatky sekúnd) predĺžia export.
+- Kresby uložené pred opravou súradníc (pred zavedením merania plochy videa)
+  boli normalizované na celý kontajner vrátane čiernych pásov – pri videu s
+  pásmi budú mierne posunuté.
 
 ## Roadmapa – Fáza 2+
 
-1. **Kresby sledujúce hráča (keyframes).** Namiesto jednej statickej kresby na
-   timestamp: kresba má zoznam keyframes (čas → pozície bodov), medzi nimi sa
-   interpoluje (lineárne) – šípka/kruh "pôjde" s hráčom počas freeze-frame
-   alebo aj počas normálneho prehrávania (overlay sa priebežne prepočítava).
+1. ~~Kresby sledujúce hráča (keyframes)~~ – hotové (režim Pohyblivá). Ďalší
+   krok: plynulejšia interpolácia (spline namiesto lineárnej) a automatické
+   sledovanie hráča z obrazu (vyžaduje CV model, v browseri zatiaľ nereálne).
 2. **Desktop export (Tauri + natívny ffmpeg).** Browser verzia je obmedzená
    výkonom ffmpeg.wasm pri dlhších/viacerých klipoch. Tauri wrapper by vedel
    spustiť natívny ffmpeg binárku (rýchlejšie, menej pamäťových limitov,
    priamy prístup k súborom bez `<input type=file>`).
 3. **Heatmapy a mapy striel.** Z `TagEvent` by sa dali odvodiť pozície (treba
-   doplniť x/y bod na hracej ploche pri tagovaní) a vizualizovať ako heatmapu
-   / mapu striel nad pôdorysom ihriska.
+   doplniť x/y bod na hracej ploche pri tagovaní – klik na mini-ihrisko v
+   TaggingPanel) a vizualizovať ako heatmapu / mapu striel nad pôdorysom
+   ihriska. Heatmapa pohybu hráčov z videa by vyžadovala tracking – nereálne.
 4. **Porovnanie zápasov.** Agregácie cez viac projektov (štatistiky trendov,
    napr. počet vysokých presingov za posledných N zápasov).
 5. **Zdieľanie s hráčmi.** Export jednotlivých klipov/poznámok pre konkrétneho

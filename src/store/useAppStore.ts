@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Clip, ShapeKind, Team } from "@/types";
+import type { Clip, DrawTool, Team } from "@/types";
 
 export type SidebarTab = "tagy" | "klipy" | "statistiky" | "supiska";
 
@@ -36,8 +36,8 @@ interface AppState {
   // Kreslenie
   isDrawingMode: boolean;
   setDrawingMode: (v: boolean) => void;
-  activeShapeTool: ShapeKind;
-  setActiveShapeTool: (tool: ShapeKind) => void;
+  activeShapeTool: DrawTool;
+  setActiveShapeTool: (tool: DrawTool) => void;
   activeDrawColor: string;
   setActiveDrawColor: (c: string) => void;
   activeStrokeWidth: number;

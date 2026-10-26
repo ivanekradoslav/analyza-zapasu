@@ -77,8 +77,9 @@ export default function ExportDialog({
     <Modal title={`Export: ${playlist.name}`} onClose={onClose} wide>
       <div className="space-y-4">
         <p className="text-sm text-gray-400">
-          Exportuje {clips.length} klip(y) do jedného MP4 (720p, H.264/AAC). Kresby sa vypália ako freeze-frame
-          s titulkom na začiatku každého klipu. Pri väčšom počte klipov/kresieb export môže chvíľu trvať.
+          Exportuje {clips.length} klip(y) do jedného MP4 (720p, H.264/AAC) s titulkom na začiatku každého klipu.
+          Freeze kresby zastavia obraz, pohyblivé kresby sa vypália do pohybu. Export beží v prehliadači a trvá
+          zhruba 1–2× dĺžku klipov.
         </p>
 
         {!videoFile && (

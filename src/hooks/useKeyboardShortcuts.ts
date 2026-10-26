@@ -48,14 +48,14 @@ export function useKeyboardShortcuts(projectId: string) {
         return;
       }
 
-      if (e.key === "." && !isDrawing) {
+      if (e.key === ".") {
         e.preventDefault();
         if (!video) return;
         video.pause();
         video.currentTime = Math.min(video.duration || Infinity, video.currentTime + FRAME_DURATION);
         return;
       }
-      if (e.key === "," && !isDrawing) {
+      if (e.key === ",") {
         e.preventDefault();
         if (!video) return;
         video.pause();
