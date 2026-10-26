@@ -44,17 +44,24 @@ export default function StatsPanel({ projectId }: { projectId: string }) {
       .sort((a, b) => b.count - a.count);
   }, [tagEvents, tagTypeMap]);
 
-  const byTagTypeVsOpponent = useMemo(() => {
-    const m = new Map<string, { my: number; opponent: number }>();
+  const byTagTypeVsOpponentByHalf = useMemo(() => {
+    const m = new Map<string, { 1: { my: number; opponent: number }; 2: { my: number; opponent: number } }>();
     tagEvents?.forEach((e) => {
-      const cur = m.get(e.tagTypeId) ?? { my: 0, opponent: 0 };
-      cur[e.team] += 1;
+      const cur = m.get(e.tagTypeId) ?? { 1: { my: 0, opponent: 0 }, 2: { my: 0, opponent: 0 } };
+      cur[e.half][e.team] += 1;
       m.set(e.tagTypeId, cur);
     });
-    return [...m.entries()]
-      .map(([id, counts]) => ({ type: tagTypeMap.get(id), ...counts }))
-      .filter((x) => x.type)
-      .sort((a, b) => b.my + b.opponent - (a.my + a.opponent));
+    function rows(half: 1 | 2 | "all") {
+      return [...m.entries()]
+        .map(([id, byHalfCounts]) => {
+          const my = half === "all" ? byHalfCounts[1].my + byHalfCounts[2].my : byHalfCounts[half].my;
+          const opponent = half === "all" ? byHalfCounts[1].opponent + byHalfCounts[2].opponent : byHalfCounts[half].opponent;
+          return { type: tagTypeMap.get(id), my, opponent };
+        })
+        .filter((x) => x.type && x.my + x.opponent > 0)
+        .sort((a, b) => b.my + b.opponent - (a.my + a.opponent));
+    }
+    return { half1: rows(1), half2: rows(2), total: rows("all") };
   }, [tagEvents, tagTypeMap]);
 
   const byPlayer = useMemo(() => {
@@ -115,17 +122,9 @@ export default function StatsPanel({ projectId }: { projectId: string }) {
         <StatRow label="2. polčas" count={byHalf[2]} />
       </div>
 
-      <div className="card p-3">
-        <h4 className="text-xs text-gray-500 mb-2">Porovnanie so súperom</h4>
-        <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
-          <span>Môj tím</span>
-          <span>Súper</span>
-        </div>
-        {byTagTypeVsOpponent.map(({ type, my, opponent }) => (
-          <VsRow key={type!.id} label={type!.name} my={my} opponent={opponent} />
-        ))}
-        {byTagTypeVsOpponent.length === 0 && <p className="text-sm text-gray-500">Žiadne dáta</p>}
-      </div>
+      <VsCard title="Porovnanie so súperom — celkovo" rows={byTagTypeVsOpponentByHalf.total} />
+      <VsCard title="Porovnanie so súperom — 1. polčas" rows={byTagTypeVsOpponentByHalf.half1} />
+      <VsCard title="Porovnanie so súperom — 2. polčas" rows={byTagTypeVsOpponentByHalf.half2} />
 
       <div className="card p-3">
         <h4 className="text-xs text-gray-500 mb-2">Podľa typu tagu</h4>
@@ -154,6 +153,28 @@ function StatRow({ label, count, color }: { label: string; count: number; color?
         {label}
       </span>
       <span className="font-medium text-gray-100">{count}</span>
+    </div>
+  );
+}
+
+function VsCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { type: { id: string; name: string } | undefined; my: number; opponent: number }[];
+}) {
+  return (
+    <div className="card p-3">
+      <h4 className="text-xs text-gray-500 mb-2">{title}</h4>
+      <div className="flex items-center justify-between text-[11px] text-gray-500 mb-1.5">
+        <span>Môj tím</span>
+        <span>Súper</span>
+      </div>
+      {rows.map(({ type, my, opponent }) => (
+        <VsRow key={type!.id} label={type!.name} my={my} opponent={opponent} />
+      ))}
+      {rows.length === 0 && <p className="text-sm text-gray-500">Žiadne dáta</p>}
     </div>
   );
 }
