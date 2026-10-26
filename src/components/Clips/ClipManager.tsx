@@ -5,12 +5,8 @@ import { addClip, createPlaylist, deleteClip, updateClip } from "@/lib/db/operat
 import { useAppStore } from "@/store/useAppStore";
 import { formatTime } from "@/lib/utils/time";
 import { Scissors, Play, Trash2, LogIn, LogOut, ListPlus, X } from "lucide-react";
-import type { Clip, Player } from "@/types";
-
-function playerLabel(p: Player) {
-  const surname = p.name.replace(/\s*\(C\)\s*$/, "").split(/\s+/).pop();
-  return `#${p.number} ${surname}`;
-}
+import { playerLabel } from "@/lib/utils/players";
+import type { Clip } from "@/types";
 
 export default function ClipManager({ projectId }: { projectId: string }) {
   const clips = useLiveQuery(() => db.clips.where("projectId").equals(projectId).reverse().sortBy("createdAt"), [projectId], []);

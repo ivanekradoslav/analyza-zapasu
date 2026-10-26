@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db/db";
+import { playerLabel } from "@/lib/utils/players";
 import { useDrawingEditor } from "@/components/DrawingCanvas/useDrawingEditor";
 import DrawingCanvas from "@/components/DrawingCanvas/DrawingCanvas";
 import DrawingToolbar from "@/components/DrawingCanvas/DrawingToolbar";
@@ -64,6 +67,35 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
 
   const editor = useDrawingEditor(handleCommit);
   const { load } = editor;
+
+  const players = useLiveQuery(() => db.players.where("projectId").equals(projectId).sortBy("order"), [projectId], []);
+  const [labelDraft, setLabelDraft] = useState("");
+  const selectedSpotlight = editor.shapes.find((s) => s.id === editor.selectedId && s.kind === "spotlight");
+  const selectedSpotlightId = selectedSpotlight?.id;
+  const selectedSpotlightLabel = selectedSpotlight?.kind === "spotlight" ? selectedSpotlight.label ?? "" : "";
+  useEffect(() => {
+    if (selectedSpotlightId) setLabelDraft(selectedSpotlightLabel);
+    // len pri zmene výberu, nie pri každej zmene štítku
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSpotlightId]);
+
+  /** Štítok platí pre svetlo v celej pohyblivej kresbe, nie len od aktuálneho kľúčového bodu. */
+  function applyLabel(text: string) {
+    setLabelDraft(text);
+    if (!selectedSpotlightId) return;
+    if (modeRef.current !== "track") {
+      editor.setSpotlightLabel(selectedSpotlightId, text);
+      return;
+    }
+    const label = text.trim() || undefined;
+    const next = updateKeyframes((k) =>
+      k.map((kf) => ({
+        ...kf,
+        shapes: kf.shapes.map((s) => (s.id === selectedSpotlightId && s.kind === "spotlight" ? { ...s, label } : s)),
+      }))
+    );
+    load(next.length > 0 ? shapesAtTime(next, videoTime()) : editor.shapes);
+  }
 
   function switchMode(m: DrawingMode) {
     modeRef.current = m;
@@ -132,7 +164,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     } else if (activeTool === "text") {
       setTextPrompt(p);
     } else {
-      editor.startShape(activeTool, p, color, strokeWidth);
+      editor.startShape(activeTool, p, color, strokeWidth, activeTool === "spotlight" ? labelDraft : undefined);
     }
   }
 
@@ -202,6 +234,8 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   let hint: string;
   if (activeTool === "move") {
     hint = "Chyť tvar a potiahni. Za úchyt meníš tvar, inde presúvaš celý tvar. Delete zmaže vybraný.";
+  } else if (activeTool === "spotlight") {
+    hint = "Ťahaj od nôh hráča do strany — veľkosť kruhu určí aj výšku svetla. Štítok vyber nižšie.";
   } else if (mode === "track" && keyframes.length > 0) {
     hint = "Posuň video (+0.2s / +1s), prepni na Presunúť a potiahni tvar za hráčom — vznikne ďalší kľúčový bod.";
   } else if (mode === "track") {
@@ -272,6 +306,17 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
             onStep={(d) => seekTo(videoTime() + d)}
             onDeleteKeyframe={handleDeleteKeyframe}
             onPreview={handlePreview}
+            labelEditor={
+              selectedSpotlightId ? { forSelected: true } : activeTool === "spotlight" ? { forSelected: false } : null
+            }
+            labelDraft={labelDraft}
+            onLabelDraftChange={setLabelDraft}
+            onLabelCommit={() => selectedSpotlightId && selectedSpotlightLabel !== labelDraft && applyLabel(labelDraft)}
+            players={players ?? []}
+            onPickPlayer={(id) => {
+              const p = players?.find((x) => x.id === id);
+              if (p) applyLabel(playerLabel(p));
+            }}
           />,
           toolbarSlot
         )}

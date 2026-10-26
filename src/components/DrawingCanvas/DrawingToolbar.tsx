@@ -1,4 +1,4 @@
-import type { DrawTool, DrawingMode } from "@/types";
+import type { DrawTool, DrawingMode, Player } from "@/types";
 import {
   ArrowUpRight,
   Minus,
@@ -15,6 +15,7 @@ import {
   X,
   Eraser,
   Play,
+  Flashlight,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -23,6 +24,7 @@ const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNo
   { kind: "arrow", label: "Šípka", title: "Šípka", icon: <ArrowUpRight size={18} /> },
   { kind: "line", label: "Čiara", title: "Čiara", icon: <Minus size={18} /> },
   { kind: "dashedLine", label: "Beh", title: "Prerušovaná čiara (beh)", icon: <MoreHorizontal size={18} /> },
+  { kind: "spotlight", label: "Svetlo", title: "Svetelný stĺp nad hráčom so štítkom", icon: <Flashlight size={18} /> },
   { kind: "ellipse", label: "Kruh", title: "Kruh pod hráča", icon: <Circle size={18} /> },
   { kind: "polyline", label: "Línia", title: "Spojnica hráčov (napr. línia obrany)", icon: <Spline size={18} /> },
   { kind: "zone", label: "Zóna", title: "Zóna", icon: <Hexagon size={18} /> },
@@ -65,6 +67,12 @@ interface Props {
   onStep: (delta: number) => void;
   onDeleteKeyframe: () => void;
   onPreview: () => void;
+  labelEditor: { forSelected: boolean } | null;
+  labelDraft: string;
+  onLabelDraftChange: (text: string) => void;
+  onLabelCommit: () => void;
+  players: Player[];
+  onPickPlayer: (id: string) => void;
 }
 
 const sectionTitle = "text-xs font-semibold uppercase tracking-wide text-gray-400";
@@ -150,6 +158,33 @@ export default function DrawingToolbar(props: Props) {
           </button>
         </div>
       </div>
+
+      {props.labelEditor && (
+        <div className="card p-3 space-y-2">
+          <h3 className={sectionTitle}>Štítok pod hráčom</h3>
+          {props.players.length > 0 && (
+            <select className="input" value="" onChange={(e) => e.target.value && props.onPickPlayer(e.target.value)}>
+              <option value="">Vybrať zo súpisky…</option>
+              {props.players.map((p) => (
+                <option key={p.id} value={p.id}>
+                  #{p.number} {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            className="input"
+            placeholder="napr. #14 alebo meno (prázdne = bez štítku)"
+            value={props.labelDraft}
+            onChange={(e) => props.onLabelDraftChange(e.target.value)}
+            onBlur={props.onLabelCommit}
+            onKeyDown={(e) => e.key === "Enter" && props.onLabelCommit()}
+          />
+          <p className="text-xs text-gray-500">
+            {props.labelEditor.forSelected ? "Mení štítok vybraného svetla." : "Použije sa pri ďalšom nakreslenom svetle."}
+          </p>
+        </div>
+      )}
 
       {isTrack && (
         <div className="card p-3 space-y-2">

@@ -32,7 +32,8 @@ function lerpShape(a: Shape, b: Shape, f: number): Shape {
       if (b.kind !== a.kind) return a;
       return { ...a, points: lerpPoints(a.points, b.points, f) as [Point, Point] };
     case "ellipse":
-      if (b.kind !== "ellipse") return a;
+    case "spotlight":
+      if (b.kind !== a.kind) return a;
       return {
         ...a,
         center: lerpPoint(a.center, b.center, f),

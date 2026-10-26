@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { newId } from "@/lib/utils/id";
-import { controlPoints, translateShape } from "@/lib/drawing/shapeGeometry";
+import { controlPoints, spotlightBeamHeightPx, translateShape } from "@/lib/drawing/shapeGeometry";
 import type { Point, Shape, ShapeKind } from "@/types";
 
 const MULTI_POINT_TOOLS: ShapeKind[] = ["polyline", "zone"];
@@ -14,6 +14,7 @@ function setControlPoint(shape: Shape, index: number, p: Point): Shape {
   const clamped = { x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) };
   switch (shape.kind) {
     case "ellipse":
+    case "spotlight":
       return { ...shape, center: clamped };
     case "text":
       return { ...shape, position: clamped };
@@ -57,12 +58,17 @@ function bodyHit(shape: Shape, p: Point, w: number, h: number) {
       return segmentsHit(shape.points, false);
     case "zone":
       return pointInPolygon(p, shape.points) || segmentsHit(shape.points, true);
-    case "ellipse": {
+    case "ellipse":
+    case "spotlight": {
       const rx = Math.max(4, shape.radiusX * w) + tol;
       const ry = Math.max(4, shape.radiusY * h) + tol;
       const nx = (p.x - shape.center.x) * w / rx;
       const ny = (p.y - shape.center.y) * h / ry;
-      return nx * nx + ny * ny <= 1;
+      if (nx * nx + ny * ny <= 1) return true;
+      if (shape.kind !== "spotlight") return false;
+      const px = p.x * w, py = p.y * h;
+      const cx = shape.center.x * w, cy = shape.center.y * h;
+      return Math.abs(px - cx) <= rx && py <= cy && py >= cy - spotlightBeamHeightPx(shape, w);
     }
     case "text": {
       const fontPx = (shape.fontSize / 100) * h;
@@ -74,7 +80,7 @@ function bodyHit(shape: Shape, p: Point, w: number, h: number) {
 }
 
 function isDegenerate(shape: Shape) {
-  if (shape.kind === "ellipse") return shape.radiusX < MIN_SIZE && shape.radiusY < MIN_SIZE;
+  if (shape.kind === "ellipse" || shape.kind === "spotlight") return shape.radiusX < MIN_SIZE && shape.radiusY < MIN_SIZE;
   if (shape.kind === "arrow" || shape.kind === "line" || shape.kind === "dashedLine") {
     const [a, b] = shape.points;
     return Math.hypot(a.x - b.x, a.y - b.y) < MIN_SIZE;
@@ -159,10 +165,17 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
     [commit]
   );
 
+  const setSpotlightLabel = useCallback(
+    (id: string, label: string) => {
+      commit(shapesRef.current.map((s) => (s.id === id && s.kind === "spotlight" ? { ...s, label: label.trim() || undefined } : s)));
+    },
+    [commit]
+  );
+
   // --- Kreslenie nových tvarov ---
 
   const startShape = useCallback(
-    (tool: ShapeKind, point: Point, color: string, strokeWidth: number) => {
+    (tool: ShapeKind, point: Point, color: string, strokeWidth: number, label?: string) => {
       draggingRef.current = true;
       const base = { id: newId(), color, strokeWidth };
       switch (tool) {
@@ -173,6 +186,9 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
           break;
         case "ellipse":
           setDraft({ ...base, kind: "ellipse", center: point, radiusX: 0.001, radiusY: 0.001 });
+          break;
+        case "spotlight":
+          setDraft({ ...base, kind: "spotlight", center: point, radiusX: 0.001, radiusY: 0.001, label: label?.trim() || undefined });
           break;
         case "polyline":
         case "zone": {
@@ -201,6 +217,10 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
         setDraft({ ...prev, points: [prev.points[0], point] });
       } else if (prev.kind === "ellipse") {
         setDraft({ ...prev, radiusX: Math.abs(point.x - prev.center.x), radiusY: Math.abs(point.y - prev.center.y) });
+      } else if (prev.kind === "spotlight") {
+        // kruh na zemi je sploštený; pri ťahaní len do strany sa výška dopočíta (video ~16:9)
+        const radiusX = Math.abs(point.x - prev.center.x);
+        setDraft({ ...prev, radiusX, radiusY: Math.max(Math.abs(point.y - prev.center.y), radiusX * (16 / 9) * 0.35) });
       }
     },
     [setDraft]
@@ -254,7 +274,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
         (cp) => Math.hypot((cp.x - point.x) * w, (cp.y - point.y) * h) <= HANDLE_RADIUS_PX
       );
       // kruh a text sa chytením za stred presúvajú celé
-      const grabsWhole = shape.kind === "ellipse" || shape.kind === "text";
+      const grabsWhole = shape.kind === "ellipse" || shape.kind === "spotlight" || shape.kind === "text";
       if (handle >= 0 || bodyHit(shape, point, w, h)) {
         moveRef.current = {
           shapeId: shape.id,
@@ -305,6 +325,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
     canRedo: futureRef.current.length > 0,
     clearAll,
     removeShape,
+    setSpotlightLabel,
     startShape,
     updateShapeDrag,
     endDrag,

@@ -55,7 +55,9 @@ Project 1---* Clip (inPoint/outPoint, voliteľne sourceTagEventId)
 Project 1---* Playlist (clipIds: string[] – poradie je poradie prehrávania/exportu)
 ```
 
-Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text`),
+Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight`),
+`spotlight` = svetelný stĺp nad hráčom (kruh pri nohách, žiara nahor s výškou
+4,2× šírka kruhu, voliteľný štítok `label` pod kruhom, napr. zo súpisky),
 súradnice **normalizované 0..1** voči ploche samotného videa (bez čiernych
 pásov – VideoPlayer meria `offsetLeft/Top/clientWidth/Height` elementu `<video>`
 a všetky prekrytia kladie presne naň). Vďaka tomu kresba sedí aj v exporte
@@ -153,7 +155,8 @@ reportuje `fraction` po každom ffmpeg príkaze; `cancel()` zavolá
 ```bash
 npm install
 npm run dev        # http://localhost:5173 (COOP/COEP hlavičky nastavené vo vite.config.ts)
-npm run build       # produkčný build do dist/
+npm run build       # produkčný build do dist/ (vrátane kontroly typov tsc -b)
+npx tsc -b          # len kontrola typov – POZOR: `npx tsc --noEmit` v koreni nekontroluje nič (tsconfig len odkazuje)
 npm run preview     # lokálny preview produkčného buildu
 ```
 

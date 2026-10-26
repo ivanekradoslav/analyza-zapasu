@@ -1,4 +1,63 @@
-import type { Shape } from "@/types";
+import { spotlightBeamHeightPx } from "@/lib/drawing/shapeGeometry";
+import type { Shape, SpotlightShape } from "@/types";
+
+function withAlpha(hex: string, alpha: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+/** Svetelný stĺp nad hráčom: žiara od nôh nahor (slabne), biely kruh pri nohách, štítok pod ním. */
+function drawSpotlight(ctx: CanvasRenderingContext2D, shape: SpotlightShape, width: number, height: number) {
+  const cx = shape.center.x * width;
+  const cy = shape.center.y * height;
+  const rx = Math.max(3, shape.radiusX * width);
+  const ry = Math.max(2, shape.radiusY * height);
+  const beamH = spotlightBeamHeightPx(shape, width);
+
+  // stĺp svetla
+  ctx.save();
+  ctx.filter = `blur(${Math.max(1.5, rx * 0.22)}px)`;
+  const beam = ctx.createLinearGradient(0, cy, 0, cy - beamH);
+  beam.addColorStop(0, withAlpha(shape.color, 0.75));
+  beam.addColorStop(0.5, withAlpha(shape.color, 0.4));
+  beam.addColorStop(1, withAlpha(shape.color, 0));
+  ctx.fillStyle = beam;
+  const bw = rx * 1.1;
+  ctx.beginPath();
+  ctx.moveTo(cx - bw, cy);
+  ctx.lineTo(cx - bw * 0.85, cy - beamH);
+  ctx.lineTo(cx + bw * 0.85, cy - beamH);
+  ctx.lineTo(cx + bw, cy);
+  ctx.ellipse(cx, cy, bw, ry, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.restore();
+
+  // svetlo na zemi + kruh
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fillStyle = withAlpha(shape.color, 0.35);
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.5, rx * 0.08);
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.stroke();
+
+  if (shape.label) {
+    const fontPx = Math.max(10, rx * 0.42);
+    ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`;
+    const textW = ctx.measureText(shape.label).width;
+    const padX = fontPx * 0.5, padY = fontPx * 0.3;
+    const boxW = textW + padX * 2, boxH = fontPx + padY * 2;
+    const bx = cx - boxW / 2, by = cy + ry + fontPx * 0.35;
+    ctx.fillStyle = "rgba(15, 23, 20, 0.85)";
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, boxH / 2.5);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+    ctx.fillText(shape.label, cx, by + boxH / 2);
+  }
+}
 
 // Vykreslí zoznam tvarov (normalizované súradnice 0..1) na canvas danej
 // pixelovej veľkosti. Používa sa pri živom prekrytí videa aj pri generovaní
@@ -84,6 +143,9 @@ export function drawShapesOnCanvas(
         ctx.stroke();
         break;
       }
+      case "spotlight":
+        drawSpotlight(ctx, shape, width, height);
+        break;
       case "text": {
         const fontPx = (shape.fontSize / 100) * height;
         ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`;

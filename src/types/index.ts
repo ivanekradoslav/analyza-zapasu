@@ -62,7 +62,8 @@ export type ShapeKind =
   | "ellipse"
   | "polyline"
   | "zone"
-  | "text";
+  | "text"
+  | "spotlight";
 
 export interface BaseShape {
   id: string;
@@ -106,13 +107,22 @@ export interface TextShape extends BaseShape {
   fontSize: number; // relatívne k výške videa
 }
 
+export interface SpotlightShape extends BaseShape {
+  kind: "spotlight"; // svetelný stĺp nad hráčom: kruh pri nohách, žiara nahor, štítok pod kruhom
+  center: Point; // stred kruhu pri nohách
+  radiusX: number;
+  radiusY: number;
+  label?: string; // napr. "#14 Pelikán"
+}
+
 export type Shape =
   | ArrowShape
   | LineShape
   | EllipseShape
   | PolylineShape
   | ZoneShape
-  | TextShape;
+  | TextShape
+  | SpotlightShape;
 
 export type DrawTool = ShapeKind | "move";
 
