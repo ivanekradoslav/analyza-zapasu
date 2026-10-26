@@ -29,7 +29,9 @@ nikam neuploaduje.
     10 s); ak ho stratí, posunieš kruh späť a spustíš znova.
   Z ktorejkoľvek kresby vytvoríš klip jedným klikom (záložka Klipy → Kresby).
 - **Klipy a playlisty** – klip jedným klikom z tagu (−5 s/+5 s, upraviteľné)
-  alebo manuálne cez I/O body; playlisty s poradím cez drag&drop.
+  alebo manuálne cez I/O body; playlisty s poradím cez drag&drop. Ku klipu
+  priradíš hráčov („+ hráč“), klipy vyfiltruješ podľa hráča a tlačidlom
+  „Playlist hráča“ z nich urobíš zostrih. Mená hráčov sú aj v titulku exportu.
 - **Export** – playlist sa dá exportovať do jedného MP4 (720p, H.264/AAC)
   vrátane vypálených kresieb a krátkeho titulku na začiatku klipu, s
   progress barom a možnosťou zrušiť.

@@ -131,6 +131,7 @@ export default function TagList({ projectId }: { projectId: string }) {
                     inPoint: clamp(ev.timestamp - 5, 0, Infinity),
                     outPoint: ev.timestamp + 5,
                     sourceTagEventId: ev.id,
+                    playerIds: ev.playerId ? [ev.playerId] : undefined,
                   })
                 }
               >

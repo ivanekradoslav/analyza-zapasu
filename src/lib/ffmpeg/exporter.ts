@@ -240,12 +240,17 @@ function buildTitleLines(
   playerMap: Map<string, Player>
 ): string[] {
   const ev = clip.sourceTagEventId ? tagEventMap.get(clip.sourceTagEventId) : undefined;
-  if (!ev) return [clip.name];
+  const playerIds = [...(ev?.playerId ? [ev.playerId] : []), ...(clip.playerIds ?? [])];
+  const players = [...new Set(playerIds)]
+    .map((id) => playerMap.get(id))
+    .filter((p): p is Player => !!p)
+    .map((p) => `#${p.number} ${p.name}`);
+  const playersLine = players.join(", ");
+
+  if (!ev) return playersLine ? [clip.name, playersLine] : [clip.name];
   const type = tagTypeMap.get(ev.tagTypeId);
-  const player = ev.playerId ? playerMap.get(ev.playerId) : undefined;
   const minute = formatMinute(ev.timestamp, ev.half);
   const line1 = type?.name ?? clip.name;
   const parts = [`${minute} min`, ev.team === "my" ? "môj tím" : "súper"];
-  if (player) parts.push(`#${player.number} ${player.name}`);
-  return [line1, parts.join(" · ")];
+  return playersLine ? [line1, parts.join(" · "), playersLine] : [line1, parts.join(" · ")];
 }

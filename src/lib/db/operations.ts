@@ -171,9 +171,9 @@ export async function deleteClip(id: string) {
 
 // --- Playlisty ---
 
-export async function createPlaylist(projectId: string, name: string) {
+export async function createPlaylist(projectId: string, name: string, clipIds: string[] = []) {
   const now = Date.now();
-  const playlist: Playlist = { id: newId(), projectId, name, clipIds: [], createdAt: now, updatedAt: now };
+  const playlist: Playlist = { id: newId(), projectId, name, clipIds, createdAt: now, updatedAt: now };
   await db.playlists.add(playlist);
   return playlist;
 }
@@ -239,6 +239,7 @@ export async function importProjectJson(data: ProjectExport): Promise<string> {
     id: remapId(c.id),
     projectId: newProjectId,
     sourceTagEventId: c.sourceTagEventId ? remapId(c.sourceTagEventId) : undefined,
+    playerIds: c.playerIds?.map(remapId),
   }));
   const playlists: Playlist[] = data.playlists.map((pl) => ({
     ...pl,

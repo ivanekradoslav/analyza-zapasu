@@ -146,6 +146,7 @@ export interface Clip {
   inPoint: number; // sekundy
   outPoint: number; // sekundy
   sourceTagEventId?: string;
+  playerIds?: string[]; // hráči, ktorých sa klip týka (filter, playlist hráča, titulok v exporte)
   createdAt: number;
 }
 
