@@ -108,8 +108,8 @@ export interface TextShape extends BaseShape {
 }
 
 export interface SpotlightShape extends BaseShape {
-  kind: "spotlight"; // svetelný stĺp nad hráčom: kruh pri nohách, žiara nahor, štítok pod kruhom
-  center: Point; // stred kruhu pri nohách
+  kind: "spotlight"; // svetelný kužeľ zhora na hráča, štítok pod ním
+  center: Point; // miesto dopadu svetla pri nohách
   radiusX: number;
   radiusY: number;
   label?: string; // napr. "#14 Pelikán"

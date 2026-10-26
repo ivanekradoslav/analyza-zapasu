@@ -56,8 +56,9 @@ Project 1---* Playlist (clipIds: string[] – poradie je poradie prehrávania/ex
 ```
 
 Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight`),
-`spotlight` = svetelný stĺp nad hráčom (kruh pri nohách, žiara nahor s výškou
-4,2× šírka kruhu, voliteľný štítok `label` pod kruhom, napr. zo súpisky),
+`spotlight` = svetelný kužeľ zhora na hráča (úzky vysoko – 7× polomer – a k zemi
+sa rozširuje, pri nohách svetlo na tráve bez obrysu; voliteľný štítok `label`
+pod hráčom, napr. zo súpisky; `center`/`radiusX/Y` = miesto dopadu pri nohách),
 súradnice **normalizované 0..1** voči ploche samotného videa (bez čiernych
 pásov – VideoPlayer meria `offsetLeft/Top/clientWidth/Height` elementu `<video>`
 a všetky prekrytia kladie presne naň). Vďaka tomu kresba sedí aj v exporte

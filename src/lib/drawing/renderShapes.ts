@@ -6,43 +6,48 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-/** Svetelný stĺp nad hráčom: žiara od nôh nahor (slabne), biely kruh pri nohách, štítok pod ním. */
+/** Svetelný kužeľ zhora: úzky vysoko nad hráčom, k zemi sa rozširuje a pri nohách svieti na trávu; štítok pod ním. */
 function drawSpotlight(ctx: CanvasRenderingContext2D, shape: SpotlightShape, width: number, height: number) {
   const cx = shape.center.x * width;
   const cy = shape.center.y * height;
   const rx = Math.max(3, shape.radiusX * width);
   const ry = Math.max(2, shape.radiusY * height);
-  const beamH = spotlightBeamHeightPx(shape, width);
+  const topY = cy - spotlightBeamHeightPx(shape, width);
+  const topHalf = rx * 0.18;
 
-  // stĺp svetla
   ctx.save();
-  ctx.filter = `blur(${Math.max(1.5, rx * 0.22)}px)`;
-  const beam = ctx.createLinearGradient(0, cy, 0, cy - beamH);
-  beam.addColorStop(0, withAlpha(shape.color, 0.75));
-  beam.addColorStop(0.5, withAlpha(shape.color, 0.4));
-  beam.addColorStop(1, withAlpha(shape.color, 0));
-  ctx.fillStyle = beam;
-  const bw = rx * 1.1;
+  ctx.filter = `blur(${Math.max(1.5, rx * 0.12)}px)`;
+
+  // kužeľ: z výšky (slabý) k zemi (najsilnejší)
+  const cone = ctx.createLinearGradient(0, topY, 0, cy);
+  cone.addColorStop(0, withAlpha(shape.color, 0));
+  cone.addColorStop(0.3, withAlpha(shape.color, 0.14));
+  cone.addColorStop(0.75, withAlpha(shape.color, 0.3));
+  cone.addColorStop(1, withAlpha(shape.color, 0.45));
+  ctx.fillStyle = cone;
   ctx.beginPath();
-  ctx.moveTo(cx - bw, cy);
-  ctx.lineTo(cx - bw * 0.85, cy - beamH);
-  ctx.lineTo(cx + bw * 0.85, cy - beamH);
-  ctx.lineTo(cx + bw, cy);
-  ctx.ellipse(cx, cy, bw, ry, 0, 0, Math.PI);
+  ctx.moveTo(cx - topHalf, topY);
+  ctx.lineTo(cx + topHalf, topY);
+  ctx.lineTo(cx + rx, cy);
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI);
+  ctx.closePath();
+  ctx.fill();
+
+  // svetlo dopadajúce na trávu (bez obrysu)
+  ctx.translate(cx, cy);
+  ctx.scale(1, ry / rx);
+  const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, rx * 1.15);
+  pool.addColorStop(0, withAlpha(shape.color, 0.55));
+  pool.addColorStop(0.7, withAlpha(shape.color, 0.3));
+  pool.addColorStop(1, withAlpha(shape.color, 0));
+  ctx.fillStyle = pool;
+  ctx.beginPath();
+  ctx.arc(0, 0, rx * 1.15, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // svetlo na zemi + kruh
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fillStyle = withAlpha(shape.color, 0.35);
-  ctx.fill();
-  ctx.lineWidth = Math.max(1.5, rx * 0.08);
-  ctx.strokeStyle = "rgba(255,255,255,0.95)";
-  ctx.stroke();
-
   if (shape.label) {
-    const fontPx = Math.max(10, rx * 0.42);
+    const fontPx = Math.min(height * 0.026, Math.max(10, rx * 0.4));
     ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`;
     const textW = ctx.measureText(shape.label).width;
     const padX = fontPx * 0.5, padY = fontPx * 0.3;

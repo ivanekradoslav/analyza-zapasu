@@ -19,7 +19,7 @@ nikam neuploaduje.
 - **Timeline** – farebné značky tagov pod videom, klik = skok na čas; zoznam
   tagov s filtrom (kategória/tím/hráč/polčas), editácia a mazanie.
 - **Kreslenie** – šípka, čiara, prerušovaná čiara, kruh pod hráčom,
-  **svetlo** (svetelný stĺp nad hráčom so štítkom, napr. „#9 Pelikán“), spojnica
+  **svetlo** (svetelný kužeľ zhora na hráča so štítkom, napr. „#9 Pelikán“), spojnica
   medzi hráčmi (napr. línia obrany), zóna, text. Dva režimy:
   - **Freeze** – video sa na danom čase zastaví, kresba sa zobrazí na
     nastavenú dĺžku (default 4 s) a potom sa pokračuje v prehrávaní.

@@ -1,7 +1,7 @@
 import type { Point, Shape, SpotlightShape } from "@/types";
 
-// Výška svetelného stĺpa ako násobok šírky kruhu pri nohách (≈ výška hráča na širokom zábere).
-const SPOTLIGHT_BEAM_RATIO = 4.2;
+// Výška svetelného kužeľa (odkiaľ svieti) ako násobok polomeru svetla pri nohách – vysoko nad hráčom.
+const SPOTLIGHT_BEAM_RATIO = 7;
 
 export function spotlightBeamHeightPx(shape: SpotlightShape, width: number) {
   return shape.radiusX * width * SPOTLIGHT_BEAM_RATIO;
