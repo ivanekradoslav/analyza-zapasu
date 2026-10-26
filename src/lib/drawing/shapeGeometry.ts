@@ -22,12 +22,3 @@ export function translateShape(shape: Shape, dx: number, dy: number): Shape {
       return { ...shape, points: shape.points.map(t) } as Shape;
   }
 }
-
-/** Bod, ktorý sa pri sledovaní hráča drží na hráčovi (stred kruhu, inak ťažisko bodov). */
-export function shapeAnchor(shape: Shape): Point {
-  const pts = controlPoints(shape);
-  return {
-    x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
-    y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
-  };
-}

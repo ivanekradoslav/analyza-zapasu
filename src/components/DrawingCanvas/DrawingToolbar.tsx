@@ -15,7 +15,6 @@ import {
   X,
   Eraser,
   Play,
-  LocateFixed,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -33,7 +32,7 @@ const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNo
 const COLORS = ["#ef4444", "#3b82f6", "#eab308", "#22c55e", "#ffffff", "#a855f7", "#f97316"];
 const STEPS = [-1, -0.2, 0.2, 1];
 
-export function formatKeyTime(t: number) {
+function formatKeyTime(t: number) {
   const m = Math.floor(t / 60);
   const s = (t % 60).toFixed(1).padStart(4, "0");
   return `${m}:${s}`;
@@ -66,11 +65,6 @@ interface Props {
   onStep: (delta: number) => void;
   onDeleteKeyframe: () => void;
   onPreview: () => void;
-  canTrack: boolean;
-  isTracking: boolean;
-  trackStatus: string | null;
-  onTrack: () => void;
-  onStopTrack: () => void;
 }
 
 const sectionTitle = "text-xs font-semibold uppercase tracking-wide text-gray-400";
@@ -159,18 +153,7 @@ export default function DrawingToolbar(props: Props) {
 
       {isTrack && (
         <div className="card p-3 space-y-2">
-          <h3 className={sectionTitle}>Pohyb</h3>
-          <button
-            className={clsx("w-full", props.isTracking ? "btn-danger" : "btn-primary")}
-            disabled={!props.isTracking && !props.canTrack}
-            onClick={props.isTracking ? props.onStopTrack : props.onTrack}
-            title="Kruh (alebo vybraný tvar) bude automaticky sledovať hráča až 10 s od aktuálneho času"
-          >
-            <LocateFixed size={15} /> {props.isTracking ? "Zastaviť sledovanie" : "Sledovať hráča automaticky"}
-          </button>
-          {props.trackStatus && <p className="text-xs text-gray-300">{props.trackStatus}</p>}
-          <p className="text-xs text-gray-500">Alebo ručne: posuň video a potiahni tvar.</p>
-          <div className="text-xs text-gray-400">Kľúčové body</div>
+          <h3 className={sectionTitle}>Kľúčové body</h3>
           <div className="flex flex-wrap gap-1">
             {props.keyframeTimes.length === 0 && <span className="text-xs text-gray-500">Zatiaľ žiadne — nakresli tvar.</span>}
             {props.keyframeTimes.map((t, i) => (

@@ -6,9 +6,6 @@ import DrawingToolbar from "@/components/DrawingCanvas/DrawingToolbar";
 import { useAppStore } from "@/store/useAppStore";
 import { findDrawingForEdit, upsertDrawing, deleteDrawing } from "@/lib/db/operations";
 import { isTrackDrawing, KEYFRAME_EPSILON, removeKeyframeAt, shapesAtTime, upsertKeyframe } from "@/lib/drawing/keyframes";
-import { shapeAnchor, translateShape } from "@/lib/drawing/shapeGeometry";
-import { PlayerTracker, simplifyTrackedKeyframes } from "@/lib/tracking/playerTracker";
-import { formatKeyTime } from "@/components/DrawingCanvas/DrawingToolbar";
 import { newId } from "@/lib/utils/id";
 import type { Drawing, DrawingMode, Keyframe, Point, Shape } from "@/types";
 
@@ -26,9 +23,6 @@ interface Props {
   onClose: () => void;
 }
 
-const TRACK_STEP_SEC = 0.2;
-const TRACK_MAX_SEC = 10;
-
 function videoTime() {
   const s = useAppStore.getState();
   return s.videoEl?.currentTime ?? s.currentTime;
@@ -43,9 +37,6 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   const modeRef = useRef<DrawingMode>("freeze");
   const previewEndRef = useRef<number | null>(null);
   const [textPrompt, setTextPrompt] = useState<Point | null>(null);
-  const trackJobRef = useRef<{ cancelled: boolean } | null>(null);
-  const [tracking, setTracking] = useState(false);
-  const [trackStatus, setTrackStatus] = useState<string | null>(null);
 
   const currentTime = useAppStore((s) => s.currentTime);
   const videoEl = useAppStore((s) => s.videoEl);
@@ -171,57 +162,6 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     load(next.length > 0 ? shapesAtTime(next, t) : []);
   }
 
-  async function handleTrack() {
-    const targetId = editor.selectedId ?? editor.shapes[editor.shapes.length - 1]?.id;
-    if (!videoEl || !targetId) return;
-    videoEl.pause();
-    const t0 = videoTime();
-    const startShapes = editor.shapes;
-    updateKeyframes((k) => upsertKeyframe(k, t0, startShapes));
-
-    const tracker = new PlayerTracker(videoEl);
-    tracker.start(startShapes.find((s) => s.id === targetId)!);
-    const job = { cancelled: false };
-    trackJobRef.current = job;
-    setTracking(true);
-    setTrackStatus("Sledujem hráča…");
-
-    const created = new Set<number>();
-    const end = Math.min(videoEl.duration || Infinity, t0 + TRACK_MAX_SEC);
-    let lostAt: number | null = null;
-    for (let i = 1; t0 + i * TRACK_STEP_SEC <= end && !job.cancelled; i++) {
-      const t = t0 + i * TRACK_STEP_SEC;
-      const res = await tracker.step(t);
-      if (job.cancelled) break;
-      if (!res) {
-        lostAt = t;
-        break;
-      }
-      const existed = keyframesRef.current.some((k) => Math.abs(k.time - t) <= KEYFRAME_EPSILON);
-      const shapes = shapesAtTime(keyframesRef.current, t).map((s) => {
-        if (s.id !== targetId) return s;
-        const a = shapeAnchor(s);
-        return translateShape(s, res.anchor.x - a.x, res.anchor.y - a.y);
-      });
-      if (!existed) created.add(t);
-      const next = updateKeyframes((k) => upsertKeyframe(k, t, shapes));
-      load(shapesAtTime(next, t));
-      setTrackStatus(`Sledujem… ${formatKeyTime(t)} · zhoda ${Math.round(res.score * 100)} %`);
-    }
-
-    updateKeyframes((k) => simplifyTrackedKeyframes(k, targetId, created));
-    trackJobRef.current = null;
-    setTracking(false);
-    if (job.cancelled) setTrackStatus("Sledovanie zastavené.");
-    else if (lostAt !== null)
-      setTrackStatus(`Hráča som stratil na ${formatKeyTime(lostAt)}. Posuň kruh na správne miesto (Presunúť) a spusti sledovanie znova.`);
-    else setTrackStatus("Hotovo. Skontroluj pohyb cez Náhľad; chybné miesto oprav posunutím kruhu.");
-  }
-
-  useEffect(() => () => {
-    if (trackJobRef.current) trackJobRef.current.cancelled = true;
-  }, []);
-
   function handlePreview() {
     const kfs = keyframesRef.current;
     if (!videoEl || kfs.length < 2) return;
@@ -332,13 +272,6 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
             onStep={(d) => seekTo(videoTime() + d)}
             onDeleteKeyframe={handleDeleteKeyframe}
             onPreview={handlePreview}
-            canTrack={editor.shapes.length > 0}
-            isTracking={tracking}
-            trackStatus={trackStatus}
-            onTrack={handleTrack}
-            onStopTrack={() => {
-              if (trackJobRef.current) trackJobRef.current.cancelled = true;
-            }}
           />,
           toolbarSlot
         )}

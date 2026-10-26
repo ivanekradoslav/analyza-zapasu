@@ -25,8 +25,6 @@ nikam neuploaduje.
   - **Pohyblivá** – kresba ide s hráčmi: nakresli tvar, posuň video
     (+0.2s / +1s), nástrojom *Presunúť* potiahni tvar na novú pozíciu
     hráča – každý posun uloží kľúčový bod a medzi nimi sa pohyb dopočíta.
-    Alebo **„Sledovať hráča automaticky“** – kruh pôjde s hráčom sám (až
-    10 s); ak ho stratí, posunieš kruh späť a spustíš znova.
   Z ktorejkoľvek kresby vytvoríš klip jedným klikom (záložka Klipy → Kresby).
 - **Klipy a playlisty** – klip jedným klikom z tagu (−5 s/+5 s, upraviteľné)
   alebo manuálne cez I/O body; playlisty s poradím cez drag&drop. Ku klipu

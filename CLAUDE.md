@@ -127,24 +127,6 @@ počas prehrávania klipu/playlistu.
   kontajner (aj nad natívnu veľkosť), plochu počíta VideoPlayer z rozmerov.
 - Klip z kresby: záložka Klipy → sekcia Kresby → „Klip“ (rozsah kresby ±3 s).
 
-### Automatické sledovanie hráča (`src/lib/tracking/playerTracker.ts`)
-
-Tlačidlo „Sledovať hráča automaticky“ (len v režime Pohyblivá) sleduje vybraný
-tvar (inak posledný nakreslený) až 10 s od aktuálneho času:
-- Z hlavného `<video>` sa snímka kreslí do OffscreenCanvas (max 960 px šírka).
-- Výrez okolo kotviaceho bodu (stred kruhu; výrez siaha viac nahor, kruh býva
-  pod nohami) sa v každom kroku (0,2 s, seek videa) hľadá v okolí predpovedanej
-  polohy (±40 px, hrubo po 2 px + doladenie) cez normalizovanú krížovú
-  koreláciu na RGB. Šablóna sa mierne prispôsobuje (40 % nový výrez, 60 %
-  pôvodný), aby neodbiehala.
-- Zhoda < 0,35 → „hráča som stratil“, sledovanie skončí; užívateľ posunie kruh a
-  spustí znova od toho miesta.
-- Po skončení `simplifyTrackedKeyframes` (Douglas–Peucker po čase, tolerancia
-  0,004) zmaže kľúčové body, ktoré dráhu nemenia – priamy beh dá 2 body.
-- Overené na syntetických videách (posúvajúca sa kamera, spoluhráč v rovnakom
-  drese, beh po oblúku): odchýlka ≤ 7 px pri 1280 px. Slabé miesto: keď sa hráč
-  úplne prekryje s iným v rovnakom drese, sledovač môže preskočiť na neho.
-
 ### Export (`src/lib/ffmpeg/exporter.ts`)
 
 Pre každý klip v playliste:
@@ -215,9 +197,15 @@ CI prostredí) – treba ho overiť manuálne v reálnom browseri.
 
 ## Roadmapa – Fáza 2+
 
-1. ~~Kresby sledujúce hráča (keyframes)~~ – hotové (režim Pohyblivá). Ďalší
-   krok: plynulejšia interpolácia (spline namiesto lineárnej) a automatické
-   sledovanie hráča z obrazu (vyžaduje CV model, v browseri zatiaľ nereálne).
+1. ~~Kresby sledujúce hráča (keyframes)~~ – hotové (režim Pohyblivá, ručné
+   kľúčové body). Ďalší krok: plynulejšia interpolácia (spline) a **automatické
+   sledovanie hráča**. Prvý pokus (porovnávanie výrezu obrazu cez normalizovanú
+   koreláciu, krok 0,2 s, `src/lib/tracking/playerTracker.ts`) je v commite
+   `0945bae` – na syntetických videách fungoval, na reálnom zázname z Veo
+   užívateľovi nefungoval, preto bol odstránený (`git show 0945bae`). Pri ďalšom
+   pokuse začať testami na reálnom Veo videu (malí hráči, rozmazanie pohybom,
+   zmena mierky pri zoome kamery) a zvážiť detekčný model (napr. YOLO cez
+   ONNX Runtime Web) namiesto porovnávania výrezu.
 2. **Desktop export (Tauri + natívny ffmpeg).** Browser verzia je obmedzená
    výkonom ffmpeg.wasm pri dlhších/viacerých klipoch. Tauri wrapper by vedel
    spustiť natívny ffmpeg binárku (rýchlejšie, menej pamäťových limitov,
