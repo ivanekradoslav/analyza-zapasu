@@ -17,8 +17,9 @@ Webová appka na video analýzu futbalových zápasov, štýl Hudl/Once:
   pohybuje s hráčmi počas prehrávania, interpolácia medzi kľúčovými bodmi).
   Tvary sa dajú dodatočne presúvať nástrojom Presunúť.
 - Klipy (z tagu alebo manuálne cez I/O body) a playlisty (drag&drop poradie).
-- Export playlistu do jedného MP4 (720p H.264/AAC) cez ffmpeg.wasm, s vypálenými
-  kresbami a krátkym titulkom na začiatku klipu.
+- Export playlistu do jedného MP4 (až 1080p H.264/AAC) cez WebCodecs (hardvérové
+  dekódovanie/kódovanie), s vypálenými kresbami a krátkym titulkom na začiatku
+  klipu. Záloha pre prehliadače bez WebCodecs: ffmpeg.wasm (720p, pomalé).
 - Štatistiky (počty podľa kategórie/tímu/hráča/polčasu) + export CSV.
 
 ## Stack
@@ -30,7 +31,9 @@ Webová appka na video analýzu futbalových zápasov, štýl Hudl/Once:
 - **Dexie (IndexedDB)** + `dexie-react-hooks` (`useLiveQuery`) – perzistentné
   dáta (projekty, súpiska, tagy, kresby, klipy, playlisty). Komponenty čítajú
   dáta reaktívne priamo z DB, nie je potrebný žiadny ďalší cache layer.
-- **ffmpeg.wasm 0.12** (`@ffmpeg/ffmpeg`, `@ffmpeg/core`) – strih a export.
+- **mediabunny** (pinned 1.62.1) – demux/dekódovanie/kódovanie/mux MP4 cez
+  WebCodecs; hlavná cesta exportu (`src/lib/export/webcodecsExporter.ts`).
+- **ffmpeg.wasm 0.12** (`@ffmpeg/ffmpeg`, `@ffmpeg/core`) – záložný export.
   Core sa builduje lokálne do appky (vite-plugin-static-copy kopíruje
   `node_modules/@ffmpeg/core/dist/esm` do `dist/ffmpeg/core`), appka teda
   nezávisí od CDN. **Musí to byť ESM build** – `@ffmpeg/ffmpeg` spúšťa worker
@@ -81,8 +84,9 @@ src/
   lib/
     db/           – Dexie schéma + CRUD operácie (operations.ts) + predvolené tagy
     drawing/      – renderShapes.ts (canvas vykresľovanie tvarov)
-    ffmpeg/        – ffmpegClient (load/mount), overlayRenderer (PNG z kresby/titulku),
-                     exporter.ts (orchestrácia celého exportu)
+    export/       – webcodecsExporter.ts (hlavný export cez WebCodecs/mediabunny)
+    ffmpeg/        – ffmpegClient (load/mount), overlayRenderer (PNG z kresby, drawTitleCard),
+                     exporter.ts (záložný ffmpeg export + buildTitleLines, typy ExportInput/Progress)
     utils/        – id, time formatting, CSV
   hooks/
     useKeyboardShortcuts.ts – globálne klávesové skratky (viazané na projectId)
@@ -109,11 +113,14 @@ je to ten istý mechanizmus (`startPlayQueue([clip])` vs. `startPlayQueue(clips)
 
 ### Freeze-frame kresby pri prehrávaní
 
-`VideoPlayer` má `useLiveQuery` na `drawings` projektu. Pri `timeupdate` ak
-`currentTime` prejde cez `drawing.timestamp` freeze kresby (a nejde o kreslenie),
-video sa zapauzuje, kresba sa zobrazí `durationSec` sekúnd (reálny `setTimeout`),
-potom sa video pustí ďalej. Toto funguje rovnako počas normálneho prehrávania aj
-počas prehrávania klipu/playlistu.
+`VideoPlayer` má `useLiveQuery` na `drawings` projektu. Kontrola beží v každom
+`requestAnimationFrame` a záložne aj pri `timeupdate` (rAF prehliadač na pozadí
+obmedzí): ak prehrávanie **prejde** cez `drawing.timestamp` (`prev < ts <= now`,
+skok < 1,5 s, nejde o kreslenie), video sa zapauzuje, vráti presne na `ts`
+(vlastný seek sa ignoruje v `seeking` handleri), kresba sa zobrazí `durationSec`
+sekúnd (`setTimeout`), potom video pokračuje. Seek/Play užívateľa freeze ukončí.
+Automatické `play()` po `seeked` vo fronte klipov sa počas freeze nespúšťa.
+Funguje pri opakovanom prehraní aj v klipe/playliste.
 
 ### Pohyblivé kresby
 
@@ -130,7 +137,29 @@ počas prehrávania klipu/playlistu.
   kontajner (aj nad natívnu veľkosť), plochu počíta VideoPlayer z rozmerov.
 - Klip z kresby: záložka Klipy → sekcia Kresby → „Klip“ (rozsah kresby ±3 s).
 
-### Export (`src/lib/ffmpeg/exporter.ts`)
+### Export cez WebCodecs (`src/lib/export/webcodecsExporter.ts`) – hlavná cesta
+
+- `Input` + `BlobSource` (video sa číta po kúskoch, nenačíta sa celé do pamäte),
+  `CanvasSink` dekóduje snímky (HW), každá sa zloží na `OffscreenCanvas`
+  (čierne pozadie, video v pomere strán, pohyblivé kresby, freeze kresba, titulok
+  prvých 2,5 s klipu) a `CanvasSource` ju zakóduje do H.264. Jeden prechod, žiadne
+  medzisúbory.
+- Rozlíšenie 1920×1080 pre zdroj ≥ 1000 px výšky, inak 1280×720; strop dátového
+  toku 10 / 6 Mbit/s (`QUALITY_*` pri zrnitom obraze vyrobí 40 Mbit/s).
+- Freeze: snímka, do ktorej padne `ts`, sa rozdelí; vloží sa `durationSec` statických
+  snímok (25 fps) s kresbou. Časy výstupu = `base + (t - inPoint) + súčet freeze
+  pred t`. Zvuk sa na rovnakých miestach rozreže (`AudioSample.trim`) a doplní sa
+  ticho. Audio AAC (fallback Opus), ak zdroj nemá zvuk, výstup je bez zvuku.
+- Výstup: ExportDialog hneď po kliknutí otvorí `showSaveFilePicker` (musí to byť
+  pred prvým `await`, inak zanikne user activation) → `StreamTarget` zapisuje
+  rovno do súboru (`fastStart: false`). Bez pickeru `BufferTarget` + stiahnutie.
+  Pri chybe/zrušení sa rozpracovaný súbor zmaže (`handle.remove()`).
+- Ak WebCodecs chýba → ffmpeg.wasm. Ak rýchly export zlyhá, dialóg ponúkne
+  „Skúsiť pomalší export (720p)“.
+- Rýchlosť: 1080p zdroj ~1,4× reálny čas aj v skrytom paneli (pôvodný ffmpeg pozri nižšie).
+
+### Záložný export cez ffmpeg.wasm (`src/lib/ffmpeg/exporter.ts`)
+
 
 Pre každý klip v playliste:
 1. Strih + scale na 1280×720 + re-encode (libx264/aac) → `clip_i_base.mp4`.
@@ -204,8 +233,8 @@ CI prostredí) – treba ho overiť manuálne v reálnom browseri.
 - Kresba sa viaže na najbližší existujúci čas v okne ±0.4s (viacero kresieb
   tesne pri sebe sa môžu prepísať – vhodné pre MVP, nie pre husté kreslenie).
   Dve pohyblivé kresby sa nemajú časovo prekrývať – editor otvorí tú prvú.
-- Export je jednovláknový (~1–2× dĺžka klipov). Pohyblivé kresby sa vypaľujú
-  ako 25 fps sekvencia PNG, dlhé okná (desiatky sekúnd) predĺžia export.
+- Záložný ffmpeg export je jednovláknový a pomalý; hlavný export cez WebCodecs
+  funguje len v Chromium prehliadačoch (Chrome/Edge).
 - Kresby uložené pred opravou súradníc (pred zavedením merania plochy videa)
   boli normalizované na celý kontajner vrátane čiernych pásov – pri videu s
   pásmi budú mierne posunuté.

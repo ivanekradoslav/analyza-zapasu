@@ -43,35 +43,46 @@ export async function renderTitleCardPng(
   const canvas = makeCanvas(width, height);
   const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
   ctx.clearRect(0, 0, width, height);
+  drawTitleCard(ctx, lines, width, height);
+  return canvasToPng(canvas);
+}
 
-  const paddingX = 24;
-  const paddingY = 14;
+/** Nakreslí titulok klipu do ľavého horného rohu; rozmery sa škálujú podľa výšky výstupu. */
+export function drawTitleCard(
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  lines: string[],
+  _width: number,
+  height: number
+) {
+  const k = height / 720;
+  const margin = 20 * k;
+  const paddingX = 24 * k;
+  const paddingY = 14 * k;
   const fontSize = Math.round(height * 0.042);
+  ctx.save();
   ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
   const textWidths = lines.map((l) => ctx.measureText(l).width);
-  const boxWidth = Math.max(...textWidths, 100) + paddingX * 2;
+  const boxWidth = Math.max(...textWidths, 100 * k) + paddingX * 2;
   const boxHeight = lines.length * fontSize * 1.35 + paddingY * 2;
 
   ctx.fillStyle = "rgba(10, 20, 16, 0.78)";
-  roundRect(ctx, 20, 20, boxWidth, boxHeight, 10);
+  roundRect(ctx, margin, margin, boxWidth, boxHeight, 10 * k);
   ctx.fill();
   ctx.strokeStyle = "rgba(34,197,94,0.9)";
-  ctx.lineWidth = 2;
-  roundRect(ctx, 20, 20, boxWidth, boxHeight, 10);
+  ctx.lineWidth = 2 * k;
+  roundRect(ctx, margin, margin, boxWidth, boxHeight, 10 * k);
   ctx.stroke();
 
-  ctx.fillStyle = "#ffffff";
   ctx.textBaseline = "top";
   lines.forEach((line, i) => {
     ctx.font = i === 0 ? `700 ${fontSize}px ui-sans-serif, system-ui, sans-serif` : `500 ${Math.round(fontSize * 0.8)}px ui-sans-serif, system-ui, sans-serif`;
     ctx.fillStyle = i === 0 ? "#ffffff" : "#9ca3af";
-    ctx.fillText(line, 20 + paddingX, 20 + paddingY + i * fontSize * 1.35);
+    ctx.fillText(line, margin + paddingX, margin + paddingY + i * fontSize * 1.35);
   });
-
-  return canvasToPng(canvas);
+  ctx.restore();
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);

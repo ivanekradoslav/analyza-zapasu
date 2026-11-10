@@ -244,7 +244,7 @@ export class PlaylistExporter {
   }
 }
 
-function buildTitleLines(
+export function buildTitleLines(
   clip: Clip,
   tagEventMap: Map<string, TagEvent>,
   tagTypeMap: Map<string, TagType>,
