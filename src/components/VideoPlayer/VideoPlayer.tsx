@@ -42,8 +42,9 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     []
   );
 
-  const resumeAfterFreezeRef = useRef<number | null>(null);
-  const lastFrozenAtRef = useRef<number>(-999);
+  const resumeTimerRef = useRef<number | null>(null);
+  const drawingsRef = useRef(drawings);
+  drawingsRef.current = drawings;
 
   const setVideoEl = useAppStore((s) => s.setVideoEl);
 
@@ -89,39 +90,75 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     v.playbackRate = playbackRate;
   }, [playbackRate, videoUrl]);
 
-  // Freeze-frame logika: pri prehrávaní, keď sa narazí na čas s kresbou, video sa zastaví
+  // Freeze-frame: keď prehrávanie prejde cez čas freeze kresby, video sa zastaví a ukáže ju.
+  // Kontroluje sa každý snímok (timeupdate chodí len ~4×/s) ako prechod prev < čas ≤ now,
+  // takže to funguje aj pri opakovanom prehraní; seek „prev“ posunie, preskočenie seekom kresbu nespustí.
+  // Bez seeku na presný čas kresby – ten by pri prehrávaní klipu spustil automatické play po seeked.
   useEffect(() => {
     const v = videoRef.current;
-    if (!v || !drawings || isDrawingMode) return;
-    if (!isPlaying) return;
-    if (resumeAfterFreezeRef.current !== null) return;
-
-    const hit = drawings.find(
-      (d) =>
-        !isTrackDrawing(d) &&
-        currentTime >= d.timestamp &&
-        currentTime < d.timestamp + 0.18 &&
-        d.timestamp > lastFrozenAtRef.current + 0.5
-    );
-    if (hit) {
-      lastFrozenAtRef.current = hit.timestamp;
-      v.pause();
-      setPlaybackState({ isPlaying: false });
-      setFrozenDrawingId(hit.id);
-      const timeout = window.setTimeout(() => {
-        setFrozenDrawingId(null);
-        resumeAfterFreezeRef.current = null;
-        v.play();
-      }, hit.durationSec * 1000);
-      resumeAfterFreezeRef.current = timeout;
-    }
-  }, [currentTime, drawings, isPlaying, isDrawingMode, setPlaybackState, setFrozenDrawingId]);
-
-  useEffect(() => {
-    return () => {
-      if (resumeAfterFreezeRef.current) window.clearTimeout(resumeAfterFreezeRef.current);
+    if (!v) return;
+    let prev = v.currentTime;
+    let raf = 0;
+    let selfSeek = false;
+    const endFreeze = () => {
+      if (resumeTimerRef.current !== null) window.clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+      setFrozenDrawingId(null);
     };
-  }, []);
+    const onSeeking = () => {
+      prev = v.currentTime;
+      if (selfSeek) {
+        selfSeek = false;
+        return;
+      }
+      if (resumeTimerRef.current !== null) endFreeze();
+    };
+    // užívateľ pustil video skôr, než freeze skončil
+    const onPlay = () => {
+      if (resumeTimerRef.current !== null) endFreeze();
+    };
+    const check = () => {
+      const now = v.currentTime;
+      if (!v.paused && !v.seeking && resumeTimerRef.current === null && !useAppStore.getState().isDrawingMode) {
+        const hit = (drawingsRef.current ?? []).find(
+          (d) => !isTrackDrawing(d) && prev < d.timestamp && d.timestamp <= now && now - prev < 1.5
+        );
+        if (hit) {
+          v.pause();
+          setFrozenDrawingId(hit.id);
+          resumeTimerRef.current = window.setTimeout(() => {
+            resumeTimerRef.current = null;
+            setFrozenDrawingId(null);
+            void v.play();
+          }, hit.durationSec * 1000);
+          // vráť obraz presne na snímku, na ktorej je kresba nakreslená
+          if (Math.abs(now - hit.timestamp) > 0.02) {
+            selfSeek = true;
+            v.currentTime = hit.timestamp;
+          }
+          prev = hit.timestamp;
+          return;
+        }
+      }
+      prev = now;
+    };
+    // rAF = presnosť na snímku; timeupdate = záloha, keď prehliadač rAF obmedzí (okno na pozadí)
+    const tick = () => {
+      check();
+      raf = requestAnimationFrame(tick);
+    };
+    v.addEventListener("seeking", onSeeking);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("timeupdate", check);
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      v.removeEventListener("seeking", onSeeking);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("timeupdate", check);
+      endFreeze();
+    };
+  }, [videoUrl, setFrozenDrawingId]);
 
   // Sledovanie konca aktuálneho klipu v playlist/klip fronte -> posun na ďalší klip
   useEffect(() => {
@@ -146,7 +183,8 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
     const v = videoRef.current;
     if (!v) return;
     function onSeeked() {
-      if (useAppStore.getState().playQueue) {
+      const st = useAppStore.getState();
+      if (st.playQueue && !st.frozenDrawingId) {
         v!.play();
       }
     }
