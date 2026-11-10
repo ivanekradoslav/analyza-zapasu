@@ -42,30 +42,25 @@ export async function terminateFFmpeg() {
   }
 }
 
+// Väčšie video sa do pamäte prehliadača nezmestí (FileReader skončí "File could not be read! Code=-1").
+const MAX_IN_MEMORY_BYTES = 500 * 1024 * 1024;
+
 /** Zamontuje veľký lokálny video súbor cez WORKERFS, aby sa nekopíroval celý do pamäte. */
 export async function mountInputFile(ffmpeg: FFmpeg, file: File): Promise<string> {
   const mountDir = "/input";
-  try {
-    await ffmpeg.createDir(mountDir);
-  } catch {
-    // adresár už existuje
-  }
+  await ffmpeg.createDir(mountDir);
   try {
     await ffmpeg.mount(FFFSType.WORKERFS, { files: [file] }, mountDir);
     return `${mountDir}/${file.name}`;
   } catch (e) {
+    if (file.size > MAX_IN_MEMORY_BYTES) {
+      throw new Error(
+        `Video sa nepodarilo pripojiť (${(file.size / 1024 / 1024 / 1024).toFixed(1)} GB je priveľa na načítanie do pamäte). Obnov stránku, otvor video znova a skús export ešte raz.`
+      );
+    }
     console.warn("WORKERFS mount zlyhal, fallback na writeFile (celý súbor sa načíta do pamäte)", e);
-    const data = await fetchFile(file);
     const fileName = "input" + (file.name.match(/\.[a-z0-9]+$/i)?.[0] ?? ".mp4");
-    await ffmpeg.writeFile(fileName, data);
+    await ffmpeg.writeFile(fileName, await fetchFile(file));
     return fileName;
-  }
-}
-
-export async function unmountInputFile(ffmpeg: FFmpeg) {
-  try {
-    await ffmpeg.unmount("/input");
-  } catch {
-    // nič, buď nebolo mountnuté alebo fallback cez writeFile
   }
 }

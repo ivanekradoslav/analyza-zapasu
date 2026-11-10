@@ -1,4 +1,4 @@
-import { getFFmpeg, mountInputFile, terminateFFmpeg, unmountInputFile } from "@/lib/ffmpeg/ffmpegClient";
+import { getFFmpeg, mountInputFile, terminateFFmpeg } from "@/lib/ffmpeg/ffmpegClient";
 import { renderDrawingOverlayPng, renderTitleCardPng, EXPORT_WIDTH, EXPORT_HEIGHT } from "@/lib/ffmpeg/overlayRenderer";
 import { activeTrackShapes, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { formatMinute } from "@/lib/utils/time";
@@ -42,12 +42,30 @@ export class PlaylistExporter {
     } catch (e) {
       if (this.cancelled) throw new ExportCancelled("Export zrušený užívateľom");
       throw e;
+    } finally {
+      // Každý export začína s čistým ffmpeg: po chybe by inak ostalo video pripojené
+      // a ďalší pokus by sa ho snažil načítať celé do pamäte.
+      await terminateFFmpeg();
     }
   }
 
   private async runInner(input: ExportInput, onProgress: (p: ExportProgress) => void): Promise<Blob> {
     const ffmpeg = await getFFmpeg();
     this.checkCancelled();
+
+    const logTail: string[] = [];
+    ffmpeg.on("log", ({ message }) => {
+      logTail.push(message);
+      if (logTail.length > 20) logTail.shift();
+    });
+    const exec = async (args: string[], step: string) => {
+      const code = await ffmpeg.exec(args);
+      this.checkCancelled();
+      if (code !== 0) {
+        const detail = logTail.filter((l) => /error|invalid|no such|failed|not/i.test(l)).slice(-2).join(" / ");
+        throw new Error(`${step} zlyhalo (ffmpeg kód ${code})${detail ? `: ${detail}` : ""}`);
+      }
+    };
 
     const inputPath = await mountInputFile(ffmpeg, input.videoFile);
     const tagTypeMap = new Map(input.tagTypes.map((t) => [t.id, t]));
@@ -84,14 +102,10 @@ export class PlaylistExporter {
       const baseFile = `clip_${i}_base.mp4`;
       const titledFile = `clip_${i}_titled.mp4`;
 
-      await ffmpeg.exec([
-        "-ss", String(clip.inPoint),
-        "-to", String(clip.outPoint),
-        "-i", inputPath,
-        "-vf", SCALE_FILTER,
-        ...ENCODE_ARGS,
-        baseFile,
-      ]);
+      await exec(
+        ["-ss", String(clip.inPoint), "-to", String(clip.outPoint), "-i", inputPath, "-vf", SCALE_FILTER, ...ENCODE_ARGS, baseFile],
+        `Strih klipu ${i + 1} (${clip.name})`
+      );
       report(`Strihám klip ${i + 1}/${input.clips.length}`);
       this.checkCancelled();
 
@@ -118,16 +132,19 @@ export class PlaylistExporter {
 
         const trackedFile = `clip_${i}_tracked.mp4`;
         // Sekvencia sa posunie na začiatok okna; po jej konci overlay púšťa video ďalej bez kresby.
-        await ffmpeg.exec([
-          "-i", baseFile,
-          "-framerate", String(TRACK_FPS),
-          "-i", `trk_${i}_%05d.png`,
-          "-filter_complex", `[1:v]setpts=PTS-STARTPTS+${winStart.toFixed(3)}/TB[ov];[0:v][ov]overlay=0:0:eof_action=pass[v]`,
-          "-map", "[v]",
-          "-map", "0:a?",
-          ...ENCODE_ARGS,
-          trackedFile,
-        ]);
+        await exec(
+          [
+            "-i", baseFile,
+            "-framerate", String(TRACK_FPS),
+            "-i", `trk_${i}_%05d.png`,
+            "-filter_complex", `[1:v]setpts=PTS-STARTPTS+${winStart.toFixed(3)}/TB[ov];[0:v][ov]overlay=0:0:eof_action=pass[v]`,
+            "-map", "[v]",
+            "-map", "0:a?",
+            ...ENCODE_ARGS,
+            trackedFile,
+          ],
+          `Pohyblivé kresby v klipe ${i + 1}`
+        );
         for (let f = 0; f < frameCount; f++) await ffmpeg.deleteFile(frameName(f));
         report(`Vypaľujem pohyblivé kresby ${i + 1}/${input.clips.length}`);
         sourceFile = trackedFile;
@@ -136,13 +153,10 @@ export class PlaylistExporter {
       const titleLines = buildTitleLines(clip, tagEventMap, tagTypeMap, playerMap);
       const titlePng = await renderTitleCardPng(titleLines);
       await ffmpeg.writeFile(`title_${i}.png`, titlePng);
-      await ffmpeg.exec([
-        "-i", sourceFile,
-        "-i", `title_${i}.png`,
-        "-filter_complex", "overlay=0:0:enable='between(t,0,2.5)'",
-        "-c:a", "copy",
-        titledFile,
-      ]);
+      await exec(
+        ["-i", sourceFile, "-i", `title_${i}.png`, "-filter_complex", "overlay=0:0:enable='between(t,0,2.5)'", "-c:a", "copy", titledFile],
+        `Titulok klipu ${i + 1}`
+      );
       report(`Vkladám titulok ${i + 1}/${input.clips.length}`);
 
       const clipDrawings = freezeDrawings
@@ -165,17 +179,16 @@ export class PlaylistExporter {
 
         if (t > prevT + 0.05) {
           const partFile = `part_${i}_${k}.mp4`;
-          await ffmpeg.exec([
-            "-ss", String(prevT), "-to", String(t), "-i", titledFile,
-            ...ENCODE_ARGS,
-            partFile,
-          ]);
+          await exec(["-ss", String(prevT), "-to", String(t), "-i", titledFile, ...ENCODE_ARGS, partFile], `Úsek klipu ${i + 1}`);
           segmentFiles.push(partFile);
           report(`Spracúvam kresby v klipe ${i + 1}`);
         }
 
         const framePng = `frame_${i}_${k}.png`;
-        await ffmpeg.exec(["-ss", String(t), "-i", titledFile, "-frames:v", "1", "-vf", `scale=${EXPORT_WIDTH}:${EXPORT_HEIGHT}`, framePng]);
+        await exec(
+          ["-ss", String(t), "-i", titledFile, "-frames:v", "1", "-vf", `scale=${EXPORT_WIDTH}:${EXPORT_HEIGHT}`, framePng],
+          `Snímka pre kresbu v klipe ${i + 1}`
+        );
         report(`Extrahujem snímku ${i + 1}.${k + 1}`);
 
         const drawingPng = `drawing_${i}_${k}.png`;
@@ -183,17 +196,20 @@ export class PlaylistExporter {
         await ffmpeg.writeFile(drawingPng, overlayPng);
 
         const frozenPng = `frozen_${i}_${k}.png`;
-        await ffmpeg.exec(["-i", framePng, "-i", drawingPng, "-filter_complex", "overlay=0:0", "-frames:v", "1", frozenPng]);
+        await exec(["-i", framePng, "-i", drawingPng, "-filter_complex", "overlay=0:0", "-frames:v", "1", frozenPng], `Kresba v klipe ${i + 1}`);
         report(`Vypaľujem kresbu ${i + 1}.${k + 1}`);
 
         const freezeFile = `freeze_${i}_${k}.mp4`;
-        await ffmpeg.exec([
-          "-loop", "1", "-i", frozenPng,
-          "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-          "-t", String(drawing.durationSec),
-          ...ENCODE_ARGS,
-          freezeFile,
-        ]);
+        await exec(
+          [
+            "-loop", "1", "-i", frozenPng,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-t", String(drawing.durationSec),
+            ...ENCODE_ARGS,
+            freezeFile,
+          ],
+          `Freeze-frame v klipe ${i + 1}`
+        );
         segmentFiles.push(freezeFile);
         report(`Generujem freeze-frame ${i + 1}.${k + 1}`);
 
@@ -202,18 +218,14 @@ export class PlaylistExporter {
 
       if (prevT < clipDuration - 0.05) {
         const partFile = `part_${i}_tail.mp4`;
-        await ffmpeg.exec([
-          "-ss", String(prevT), "-to", String(clipDuration), "-i", titledFile,
-          ...ENCODE_ARGS,
-          partFile,
-        ]);
+        await exec(["-ss", String(prevT), "-to", String(clipDuration), "-i", titledFile, ...ENCODE_ARGS, partFile], `Koniec klipu ${i + 1}`);
         segmentFiles.push(partFile);
       }
 
       const listName = `concat_clip_${i}.txt`;
       await ffmpeg.writeFile(listName, new TextEncoder().encode(segmentFiles.map((f) => `file '${f}'`).join("\n")));
       const clipFinal = `clip_${i}_final.mp4`;
-      await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", listName, "-c", "copy", clipFinal]);
+      await exec(["-f", "concat", "-safe", "0", "-i", listName, "-c", "copy", clipFinal], `Spájanie klipu ${i + 1}`);
       report(`Spájam segmenty klipu ${i + 1}`);
 
       finalClipFiles.push(clipFinal);
@@ -222,11 +234,10 @@ export class PlaylistExporter {
     this.checkCancelled();
     const finalListName = "concat_final.txt";
     await ffmpeg.writeFile(finalListName, new TextEncoder().encode(finalClipFiles.map((f) => `file '${f}'`).join("\n")));
-    await ffmpeg.exec(["-f", "concat", "-safe", "0", "-i", finalListName, "-c", "copy", "output.mp4"]);
+    await exec(["-f", "concat", "-safe", "0", "-i", finalListName, "-c", "copy", "output.mp4"], "Spájanie klipov do jedného videa");
     report("Finalizujem export");
 
     const data = await ffmpeg.readFile("output.mp4");
-    await unmountInputFile(ffmpeg);
 
     onProgress({ fraction: 1, label: "Hotovo" });
     return new Blob([data as unknown as ArrayBuffer], { type: "video/mp4" });

@@ -151,6 +151,17 @@ reportuje `fraction` po každom ffmpeg príkaze; `cancel()` zavolá
 `ffmpeg.terminate()` (skutočné prerušenie behu), čo sa odchytí a vyhodí ako
 `ExportCancelled`.
 
+Spoľahlivosť:
+- Po **každom** exporte (aj neúspešnom) sa ffmpeg inštancia ukončí (`finally` v `run`).
+  Inak po chybe ostal `/input` pripojený, ďalší mount zlyhal a fallback sa snažil
+  načítať celé video zápasu do pamäte → „File could not be read! Code=-1“.
+- Fallback na načítanie do pamäte len pre video < 500 MB, inak zrozumiteľná chyba.
+- Každý `ffmpeg.exec` kontroluje návratový kód; chyba povie, ktorý krok zlyhal
+  (napr. „Titulok klipu 1 zlyhalo…“) a posledné chybové riadky z logu ffmpeg.
+- ExportDialog pred štartom skontroluje, či klipy nie sú mimo dĺžky otvoreného videa.
+- Stiahnutie: `URL.revokeObjectURL` až po minúte (okamžité zrušenie preruší
+  Chromu sťahovanie väčšieho súboru); MP4 sa po exporte stiahne automaticky.
+
 ## Ako appku spustiť
 
 ```bash

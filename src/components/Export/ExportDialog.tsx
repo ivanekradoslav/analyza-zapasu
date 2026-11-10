@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { db } from "@/lib/db/db";
 import { useAppStore } from "@/store/useAppStore";
+import { formatTime } from "@/lib/utils/time";
 import Modal from "@/components/common/Modal";
 import { PlaylistExporter, ExportCancelled, type ExportProgress } from "@/lib/ffmpeg/exporter";
 import type { Clip, Playlist } from "@/types";
@@ -18,6 +19,7 @@ export default function ExportDialog({
   onClose: () => void;
 }) {
   const videoFile = useAppStore((s) => s.videoFile);
+  const duration = useAppStore((s) => s.duration);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
@@ -39,6 +41,13 @@ export default function ExportDialog({
   async function handleStart() {
     if (!videoFile) {
       setError("Video nie je otvorené v appke – otvor ho znova pred exportom.");
+      return;
+    }
+    const outside = clips.find((c) => duration > 0 && c.inPoint >= duration - 0.1);
+    if (outside) {
+      setError(
+        `Klip „${outside.name}“ začína v ${formatTime(outside.inPoint)}, ale otvorené video má len ${formatTime(duration)}. Otvor video celého zápasu (Zmeniť video) a spusti export znova.`
+      );
       return;
     }
     setError(null);
