@@ -40,6 +40,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   const modeRef = useRef<DrawingMode>("freeze");
   const previewEndRef = useRef<number | null>(null);
   const [textPrompt, setTextPrompt] = useState<Point | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
 
   const currentTime = useAppStore((s) => s.currentTime);
   const videoEl = useAppStore((s) => s.videoEl);
@@ -133,18 +134,25 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     }
   }, [currentTime, videoEl]);
 
-  const { selectedId, removeShape } = editor;
+  const { selectedId, removeShape, hasDraft, finishMultiPoint, cancelDraft } = editor;
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if (!selectedId || tag === "INPUT" || tag === "TEXTAREA") return;
-      e.preventDefault();
-      removeShape(selectedId);
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (hasDraft && (e.key === "Enter" || e.key === "Escape")) {
+        e.preventDefault();
+        if (e.key === "Enter") finishMultiPoint();
+        else cancelDraft();
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+        e.preventDefault();
+        removeShape(selectedId);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, removeShape]);
+  }, [selectedId, removeShape, hasDraft, finishMultiPoint, cancelDraft]);
 
   function handleModeChange(m: DrawingMode) {
     if (m === mode) return;
@@ -159,6 +167,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   }
 
   function handlePointerDown(p: Point) {
+    setSaveNote(null);
     if (activeTool === "move") {
       editor.beginMove(p, rect.width, rect.height);
     } else if (activeTool === "text") {
@@ -203,6 +212,8 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   }
 
   async function handleSave() {
+    // rozkreslená línia/zóna sa uloží tiež (inak by sa bez dvojkliku zahodila)
+    const shapes = finishMultiPoint();
     const now = videoTime();
     const base = {
       id: existing?.id ?? newId(),
@@ -217,11 +228,15 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
       if (kfs.length > 0) {
         drawing = { ...base, mode: "track", keyframes: kfs, timestamp: kfs[0].time, shapes: kfs[0].shapes };
       }
-    } else if (editor.shapes.length > 0) {
+    } else if (shapes.length > 0) {
       const timestamp = existing && !isTrackDrawing(existing) ? existing.timestamp : now;
-      drawing = { ...base, mode: "freeze", timestamp, shapes: editor.shapes };
+      drawing = { ...base, mode: "freeze", timestamp, shapes };
     }
 
+    if (!drawing && !existing) {
+      setSaveNote("Nie je čo uložiť – najprv nakresli tvar (pri Línii stačí kliknúť aspoň 2 body).");
+      return;
+    }
     if (drawing) await upsertDrawing(drawing);
     else if (existing) await deleteDrawing(existing.id);
     onClose();
@@ -232,16 +247,18 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   const activeKeyframeIndex = keyframes.findIndex((k) => Math.abs(k.time - currentTime) <= KEYFRAME_EPSILON);
 
   let hint: string;
-  if (activeTool === "move") {
+  if (saveNote) {
+    hint = saveNote;
+  } else if (activeTool === "move") {
     hint = "Chyť tvar a potiahni. Za úchyt meníš tvar, inde presúvaš celý tvar. Delete zmaže vybraný.";
   } else if (activeTool === "spotlight") {
     hint = "Ťahaj od nôh hráča do strany — veľkosť kruhu určí aj výšku svetla. Štítok vyber nižšie.";
+  } else if (activeTool === "polyline" || activeTool === "zone") {
+    hint = "Klikaním pridávaš body. Dvojklik alebo Enter tvar dokončí, Esc ho zruší. Uložiť kresbu ho dokončí tiež.";
   } else if (mode === "track" && keyframes.length > 0) {
     hint = "Posuň video (+0.2s / +1s), prepni na Presunúť a potiahni tvar za hráčom — vznikne ďalší kľúčový bod.";
   } else if (mode === "track") {
     hint = "Pohyblivá kresba: nakresli tvar, napr. kruh pod hráča alebo líniu obrany.";
-  } else if (activeTool === "polyline" || activeTool === "zone") {
-    hint = "Klikaním pridávaš body, dvojklikom dokončíš tvar";
   } else if (activeTool === "text") {
     hint = "Klikni na miesto a napíš text";
   } else {
@@ -283,7 +300,10 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
             mode={mode}
             onModeChange={handleModeChange}
             activeTool={activeTool}
-            onToolChange={setActiveTool}
+            onToolChange={(t) => {
+              finishMultiPoint();
+              setActiveTool(t);
+            }}
             color={color}
             onColorChange={setColor}
             strokeWidth={strokeWidth}

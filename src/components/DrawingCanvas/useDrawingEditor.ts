@@ -100,6 +100,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
   const draggingRef = useRef(false);
   const moveRef = useRef<MoveState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hover, setHover] = useState<Point | null>(null);
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
 
@@ -131,6 +132,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
       historyRef.current = [];
       futureRef.current = [];
       setDraft(null);
+      setHover(null);
       moveRef.current = null;
       bump();
     },
@@ -193,6 +195,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
         case "polyline":
         case "zone": {
           const prev = draftRef.current;
+          setHover(point);
           if (prev && prev.kind === tool) {
             setDraft({ ...prev, points: [...prev.points, point] });
           } else if (tool === "zone") {
@@ -212,6 +215,10 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
   const updateShapeDrag = useCallback(
     (point: Point) => {
       const prev = draftRef.current;
+      if (prev && (prev.kind === "polyline" || prev.kind === "zone")) {
+        setHover(point);
+        return;
+      }
       if (!draggingRef.current || !prev) return;
       if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine") {
         setDraft({ ...prev, points: [prev.points[0], point] });
@@ -240,18 +247,27 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
     [commit, setDraft]
   );
 
-  const finishMultiPoint = useCallback(() => {
+  /** Dokončí rozkreslenú líniu/zónu a vráti aktuálne tvary (aj keď nebolo čo dokončiť). */
+  const finishMultiPoint = useCallback((): Shape[] => {
     const d = draftRef.current;
+    draggingRef.current = false;
     setDraft(null);
-    if (d && (d.kind === "polyline" || d.kind === "zone") && d.points.length >= 2) {
-      commit([...shapesRef.current, d]);
-      setSelectedId(d.id);
+    setHover(null);
+    if (d && (d.kind === "polyline" || d.kind === "zone")) {
+      // dvojklik pridá ten istý bod ešte dvakrát
+      const points = d.points.filter((p, i) => i === 0 || Math.hypot(p.x - d.points[i - 1].x, p.y - d.points[i - 1].y) > 0.003);
+      if (points.length >= 2) {
+        commit([...shapesRef.current, { ...d, points }]);
+        setSelectedId(d.id);
+      }
     }
+    return shapesRef.current;
   }, [commit, setDraft]);
 
   const cancelDraft = useCallback(() => {
     draggingRef.current = false;
     setDraft(null);
+    setHover(null);
   }, [setDraft]);
 
   const addText = useCallback(
@@ -314,9 +330,14 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
     if (m?.moved) commit(shapesRef.current, m.before);
   }, [commit]);
 
+  // rozkreslená línia/zóna pokračuje ku kurzoru, aby bolo vidno, kam pôjde ďalší bod
+  const draftPreview =
+    draft && hover && (draft.kind === "polyline" || draft.kind === "zone") ? { ...draft, points: [...draft.points, hover] } : draft;
+
   return {
     shapes,
-    draft,
+    draft: draftPreview,
+    hasDraft: draft !== null,
     selectedId,
     load,
     undo,
