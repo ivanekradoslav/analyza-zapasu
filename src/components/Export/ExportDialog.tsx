@@ -22,6 +22,19 @@ export default function ExportDialog({
   const [error, setError] = useState<string | null>(null);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const exporterRef = useRef<PlaylistExporter | null>(null);
+  const fileName = `${playlist.name.replace(/[\\/:*?"<>|]+/g, "_").trim() || "export"}.mp4`;
+
+  function download(blob: Blob) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // okamžité revokeObjectURL preruší Chromu sťahovanie väčšieho súboru
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
 
   async function handleStart() {
     if (!videoFile) {
@@ -44,6 +57,7 @@ export default function ExportDialog({
     try {
       const blob = await exporter.run({ videoFile, clips, drawings, tagEvents, tagTypes, players }, setProgress);
       setResultBlob(blob);
+      download(blob);
     } catch (e) {
       if (e instanceof ExportCancelled) {
         setProgress(null);
@@ -57,18 +71,6 @@ export default function ExportDialog({
 
   function handleCancel() {
     exporterRef.current?.cancel();
-  }
-
-  function handleDownload() {
-    if (!resultBlob) return;
-    const url = URL.createObjectURL(resultBlob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${playlist.name.replace(/[^a-z0-9_-]+/gi, "_")}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
   }
 
   const isRunning = progress !== null && progress.fraction < 1 && !resultBlob;
@@ -104,7 +106,8 @@ export default function ExportDialog({
 
         {resultBlob && (
           <div className="rounded-md border border-emerald-600/40 bg-emerald-600/10 p-3 text-sm text-emerald-300">
-            Export hotový! Veľkosť: {(resultBlob.size / 1024 / 1024).toFixed(1)} MB
+            Export hotový ({(resultBlob.size / 1024 / 1024).toFixed(1)} MB) a stiahnutý ako <b>{fileName}</b> do priečinka
+            pre stiahnuté súbory (v Chrome ich otvoríš cez Ctrl+J). Ak sa stiahnutie nespustilo, klikni na Stiahnuť MP4.
           </div>
         )}
 
@@ -116,7 +119,7 @@ export default function ExportDialog({
           ) : resultBlob ? (
             <>
               <button className="btn-ghost" onClick={onClose}>Zavrieť</button>
-              <button className="btn-primary" onClick={handleDownload}>
+              <button className="btn-primary" onClick={() => download(resultBlob)}>
                 <Download size={15} /> Stiahnuť MP4
               </button>
             </>
