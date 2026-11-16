@@ -51,6 +51,18 @@ export default function StatsPanel({ projectId }: { projectId: string }) {
       cur[e.half][e.team] += 1;
       m.set(e.tagTypeId, cur);
     });
+    // Gól je zároveň strela: v porovnaní sa strely rátajú vrátane gólov (ako vo futbalových štatistikách).
+    const types = [...tagTypeMap.values()];
+    const shotType = types.find((t) => t.name.trim().toLowerCase() === "strela");
+    const goalType = types.find((t) => t.name.trim().toLowerCase() === "gól");
+    const goals = goalType && m.get(goalType.id);
+    if (shotType && goals) {
+      const shots = m.get(shotType.id) ?? { 1: { my: 0, opponent: 0 }, 2: { my: 0, opponent: 0 } };
+      m.set(shotType.id, {
+        1: { my: shots[1].my + goals[1].my, opponent: shots[1].opponent + goals[1].opponent },
+        2: { my: shots[2].my + goals[2].my, opponent: shots[2].opponent + goals[2].opponent },
+      });
+    }
     function rows(half: 1 | 2 | "all") {
       return [...m.entries()]
         .map(([id, byHalfCounts]) => {
