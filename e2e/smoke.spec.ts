@@ -53,9 +53,13 @@ test("základný flow: projekt -> video -> tag -> klip -> playlist", async ({ pa
     const v = document.querySelector("video")!;
     v.currentTime = 3;
   });
-  await page.waitForTimeout(200);
-  await clipCard.getByRole("button", { name: /^O:/ }).click();
-  await clipCard.getByRole("button", { name: "Vytvoriť", exact: true }).click();
+  // appka sa o novom čase dozvie až po dokončení seeku – O bod nastavujeme, kým nie je za I bodom
+  const createClip = clipCard.getByRole("button", { name: "Vytvoriť", exact: true });
+  await expect(async () => {
+    await clipCard.getByRole("button", { name: /^O:/ }).click();
+    await expect(createClip).toBeEnabled({ timeout: 500 });
+  }).toPass({ timeout: 15_000 });
+  await createClip.click();
 
   // 5. Playlist
   const playlistCard = page.locator(".card", { hasText: "Playlisty" });

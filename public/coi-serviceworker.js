@@ -25,10 +25,15 @@ if (typeof window === "undefined") {
       return;
     }
 
+    // Stránku (index.html) vždy overíme na serveri. GitHub Pages ju inak nechá v cache prehliadača až 10 minút
+    // a stará verzia po nasadení odkazuje na už zmazané súbory, takže sa ukáže prázdna stránka.
+    // Ak sa stránka nezmenila, server vráti len krátku odpoveď 304, takže to nič nespomalí.
     const request =
-      coepCredentialless && r.mode === "no-cors"
-        ? new Request(r, { credentials: "omit" })
-        : r;
+      r.mode === "navigate"
+        ? new Request(r.url, { cache: "no-cache", credentials: "same-origin", redirect: "manual" })
+        : coepCredentialless && r.mode === "no-cors"
+          ? new Request(r, { credentials: "omit" })
+          : r;
     event.respondWith(
       fetch(request)
         .then((response) => {

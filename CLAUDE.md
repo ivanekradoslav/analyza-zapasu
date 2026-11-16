@@ -222,6 +222,13 @@ CI prostredí) – treba ho overiť manuálne v reálnom browseri.
   (registrovaný v `index.html`) ich dorobí v browseri. Jednovláknový ffmpeg ich
   nepotrebuje, sú tam kvôli prípadnému návratu k core-mt. Lokálne
   (`vite dev`/`preview`) sú hlavičky nastavené priamo v `vite.config.ts`.
+- Stará stránka po nasadení: GitHub Pages posiela `index.html` s `max-age=600`, takže prehliadač by
+  po deployi mohol použiť starý index odkazujúci na zmazaný `assets/index-*.js` → prázdna stránka.
+  Ochrana: (1) `coi-serviceworker.js` sťahuje navigácie s `cache: "no-cache"` (vždy revalidácia, 304 je lacná),
+  (2) inline skript v `index.html` pri 404 na `/assets/` súbor raz obnoví stránku (poistka 30 s v sessionStorage),
+  (3) `ExportDialog` pri zlyhaní lazy importu exportéra vypíše „obnov stránku“.
+- Lokálny build s GitHub base cez Git Bash: `MSYS_NO_PATHCONV=1 VITE_BASE_PATH=/analyza-zapasu/ npm run build`
+  (inak MSYS prepíše cestu na `C:/Program Files/Git/...`). Playwright testy potrebujú build s base `/`.
 - Pred prvým push treba v repe zapnúť **Settings → Pages → Source: GitHub Actions**.
 
 ## Known limitations / vedomé zjednodušenia Fázy 1

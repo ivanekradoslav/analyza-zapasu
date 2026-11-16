@@ -6,6 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Analýza zápasu</title>
     <script>
+      // Poistka po nasadení novej verzie: ak prehliadač použil starú uloženú stránku, ktorá odkazuje na už
+      // zmazaný súbor appky (404), stránku raz obnovíme. Obnovenie si stiahne aktuálnu verziu zo servera.
+      window.addEventListener(
+        "error",
+        function (e) {
+          var el = e.target;
+          if (!el || (el.tagName !== "SCRIPT" && el.tagName !== "LINK")) return;
+          if (!/\/assets\//.test(el.src || el.href || "")) return;
+          var last = Number(sessionStorage.getItem("staleReloadAt") || 0);
+          if (Date.now() - last < 30000) return; // proti nekonečnému obnovovaniu
+          sessionStorage.setItem("staleReloadAt", String(Date.now()));
+          location.reload();
+        },
+        true
+      );
+    </script>
+    <script>
       // Na GitHub Pages nevieme nastaviť COOP/COEP hlavičky zo servera,
       // tak ich dorobí coi-serviceworker (potrebné pre SharedArrayBuffer / multithread ffmpeg.wasm).
       // Lokálne (vite dev/preview) sú hlavičky už nastavené serverom, takže SW tam nie je nutný,

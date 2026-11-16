@@ -98,7 +98,19 @@ export default function ExportDialog({
     const input = { videoFile, clips, drawings, tagEvents, tagTypes, players };
 
     // knižnica na WebCodecs sa načíta až pri exporte (nezaťažuje štart appky)
-    const gpu = useGpu ? await import("@/lib/export/webcodecsExporter") : null;
+    let gpu: typeof import("@/lib/export/webcodecsExporter") | null = null;
+    if (useGpu) {
+      try {
+        gpu = await import("@/lib/export/webcodecsExporter");
+      } catch (e) {
+        // appka bola medzičasom nasadená v novej verzii a starý súbor exportu už na serveri nie je
+        console.error(e);
+        if (handle) await (handle as unknown as { remove?: () => Promise<void> }).remove?.().catch(() => undefined);
+        setProgress(null);
+        setError("Medzitým vyšla nová verzia appky. Obnov stránku (F5), znova otvor video a spusti export.");
+        return;
+      }
+    }
     if (gpu && (await gpu.webCodecsSupported())) {
       const exporter = new gpu.WebCodecsExporter();
       exporterRef.current = exporter;
