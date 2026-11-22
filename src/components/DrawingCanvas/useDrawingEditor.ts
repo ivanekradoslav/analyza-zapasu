@@ -1,7 +1,18 @@
 import { useCallback, useRef, useState } from "react";
 import { newId } from "@/lib/utils/id";
 import { controlPoints, spotlightBeamHeightPx, translateShape } from "@/lib/drawing/shapeGeometry";
+import { pitchDistance, type PitchProjection } from "@/lib/drawing/pitch";
 import type { Point, Shape, ShapeKind } from "@/types";
+
+/** Kontext kreslenia na trávu: perspektíva ihriska (ak je nastavená) a či kresliť nové tvary na trávu. */
+export interface GroundContext {
+  proj: PitchProjection | null;
+  ground: boolean;
+}
+
+// tvary, ktoré vedia ležať na tráve
+const GROUND_KINDS: ShapeKind[] = ["arrow", "line", "dashedLine", "ellipse", "spotlight", "polyline"];
+const MIN_RADIUS_M = 0.3;
 
 const MULTI_POINT_TOOLS: ShapeKind[] = ["polyline", "zone"];
 const HANDLE_RADIUS_PX = 12;
@@ -55,7 +66,11 @@ function bodyHit(shape: Shape, p: Point, w: number, h: number) {
     case "line":
     case "dashedLine":
     case "polyline":
+    case "measure":
       return segmentsHit(shape.points, false);
+    case "offsideLine":
+      // čiara ide cez celé ihrisko — chytá sa za úchyt (bod, kde bola nakreslená)
+      return false;
     case "zone":
       return pointInPolygon(p, shape.points) || segmentsHit(shape.points, true);
     case "ellipse":
@@ -80,8 +95,11 @@ function bodyHit(shape: Shape, p: Point, w: number, h: number) {
 }
 
 function isDegenerate(shape: Shape) {
+  if ((shape.kind === "ellipse" || shape.kind === "spotlight") && shape.ground && shape.radiusM !== undefined) {
+    return shape.radiusM < MIN_RADIUS_M;
+  }
   if (shape.kind === "ellipse" || shape.kind === "spotlight") return shape.radiusX < MIN_SIZE && shape.radiusY < MIN_SIZE;
-  if (shape.kind === "arrow" || shape.kind === "line" || shape.kind === "dashedLine") {
+  if (shape.kind === "arrow" || shape.kind === "line" || shape.kind === "dashedLine" || shape.kind === "measure") {
     const [a, b] = shape.points;
     return Math.hypot(a.x - b.x, a.y - b.y) < MIN_SIZE;
   }
@@ -89,7 +107,7 @@ function isDegenerate(shape: Shape) {
 }
 
 /** onCommit sa volá pri každej zmene od užívateľa (nie pri load) — pohyblivé kresby z toho robia kľúčové body. */
-export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
+export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround?: () => GroundContext) {
   const [shapes, setShapesState] = useState<Shape[]>([]);
   const shapesRef = useRef<Shape[]>([]);
   const [draft, setDraftState] = useState<Shape | null>(null);
@@ -103,6 +121,8 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
   const [hover, setHover] = useState<Point | null>(null);
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
+  const getGroundRef = useRef(getGround);
+  getGroundRef.current = getGround;
 
   const setShapes = useCallback((s: Shape[]) => {
     shapesRef.current = s;
@@ -179,18 +199,27 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
   const startShape = useCallback(
     (tool: ShapeKind, point: Point, color: string, strokeWidth: number, label?: string) => {
       draggingRef.current = true;
-      const base = { id: newId(), color, strokeWidth };
+      const g = getGroundRef.current?.();
+      const onGround = !!g?.proj && g.ground && GROUND_KINDS.includes(tool);
+      const base = { id: newId(), color, strokeWidth, ...(onGround ? { ground: true } : {}) };
+      const radiusM = onGround ? { radiusM: 0 } : {};
       switch (tool) {
         case "arrow":
         case "line":
         case "dashedLine":
           setDraft({ ...base, kind: tool, points: [point, point] });
           break;
+        case "measure":
+          setDraft({ ...base, kind: "measure", points: [point, point] });
+          break;
+        case "offsideLine":
+          setDraft({ ...base, kind: "offsideLine", points: [point] });
+          break;
         case "ellipse":
-          setDraft({ ...base, kind: "ellipse", center: point, radiusX: 0.001, radiusY: 0.001 });
+          setDraft({ ...base, ...radiusM, kind: "ellipse", center: point, radiusX: 0.001, radiusY: 0.001 });
           break;
         case "spotlight":
-          setDraft({ ...base, kind: "spotlight", center: point, radiusX: 0.001, radiusY: 0.001, label: label?.trim() || undefined });
+          setDraft({ ...base, ...radiusM, kind: "spotlight", center: point, radiusX: 0.001, radiusY: 0.001, label: label?.trim() || undefined });
           break;
         case "polyline":
         case "zone": {
@@ -220,14 +249,30 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void) {
         return;
       }
       if (!draggingRef.current || !prev) return;
-      if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine") {
+      // na tráve: polomer v metroch = vzdialenosť od stredu po kurzor na ihrisku
+      const proj = getGroundRef.current?.().proj ?? null;
+      const groundRadius = (center: Point) =>
+        prev.ground && proj ? { radiusM: pitchDistance(proj, center, point) ?? 0 } : {};
+      if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine" || prev.kind === "measure") {
         setDraft({ ...prev, points: [prev.points[0], point] });
+      } else if (prev.kind === "offsideLine") {
+        setDraft({ ...prev, points: [point] });
       } else if (prev.kind === "ellipse") {
-        setDraft({ ...prev, radiusX: Math.abs(point.x - prev.center.x), radiusY: Math.abs(point.y - prev.center.y) });
+        setDraft({
+          ...prev,
+          radiusX: Math.abs(point.x - prev.center.x),
+          radiusY: Math.abs(point.y - prev.center.y),
+          ...groundRadius(prev.center),
+        });
       } else if (prev.kind === "spotlight") {
         // kruh na zemi je sploštený; pri ťahaní len do strany sa výška dopočíta (video ~16:9)
         const radiusX = Math.abs(point.x - prev.center.x);
-        setDraft({ ...prev, radiusX, radiusY: Math.max(Math.abs(point.y - prev.center.y), radiusX * (16 / 9) * 0.35) });
+        setDraft({
+          ...prev,
+          radiusX,
+          radiusY: Math.max(Math.abs(point.y - prev.center.y), radiusX * (16 / 9) * 0.35),
+          ...groundRadius(prev.center),
+        });
       }
     },
     [setDraft]

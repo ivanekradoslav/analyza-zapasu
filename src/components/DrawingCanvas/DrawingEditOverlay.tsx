@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db/db";
@@ -6,11 +6,13 @@ import { playerLabel } from "@/lib/utils/players";
 import { useDrawingEditor } from "@/components/DrawingCanvas/useDrawingEditor";
 import DrawingCanvas from "@/components/DrawingCanvas/DrawingCanvas";
 import DrawingToolbar from "@/components/DrawingCanvas/DrawingToolbar";
+import CalibrationOverlay from "@/components/DrawingCanvas/CalibrationOverlay";
 import { useAppStore } from "@/store/useAppStore";
 import { findDrawingForEdit, upsertDrawing, deleteDrawing } from "@/lib/db/operations";
 import { isTrackDrawing, KEYFRAME_EPSILON, removeKeyframeAt, shapesAtTime, upsertKeyframe } from "@/lib/drawing/keyframes";
+import { DEFAULT_CORNERS, isConvexQuad, makeProjection, PITCH_PRESETS } from "@/lib/drawing/pitch";
 import { newId } from "@/lib/utils/id";
-import type { Drawing, DrawingMode, Keyframe, Point, Shape } from "@/types";
+import type { Drawing, DrawingMode, Keyframe, PitchCalibration, Point, Shape } from "@/types";
 
 export interface OverlayRect {
   left: number;
@@ -50,6 +52,16 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   const setColor = useAppStore((s) => s.setActiveDrawColor);
   const strokeWidth = useAppStore((s) => s.activeStrokeWidth);
   const setStrokeWidth = useAppStore((s) => s.setActiveStrokeWidth);
+  const drawOnGround = useAppStore((s) => s.drawOnGround);
+  const setDrawOnGround = useAppStore((s) => s.setDrawOnGround);
+  const setLastCalibration = useAppStore((s) => s.setLastCalibration);
+
+  // ihrisko 3D: uložená kalibrácia kresby a rozpracovaná pri nastavovaní
+  const [calibration, setCalibration] = useState<PitchCalibration | null>(null);
+  const [calibDraft, setCalibDraft] = useState<PitchCalibration | null>(null);
+  const projection = useMemo(() => makeProjection(calibration), [calibration]);
+  const groundRef = useRef({ proj: projection, ground: drawOnGround });
+  groundRef.current = { proj: projection, ground: drawOnGround };
 
   const updateKeyframes = useCallback((fn: (k: Keyframe[]) => Keyframe[]) => {
     const next = fn(keyframesRef.current);
@@ -66,7 +78,8 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     [updateKeyframes]
   );
 
-  const editor = useDrawingEditor(handleCommit);
+  const getGround = useCallback(() => groundRef.current, []);
+  const editor = useDrawingEditor(handleCommit, getGround);
   const { load } = editor;
 
   const players = useLiveQuery(() => db.players.where("projectId").equals(projectId).sortBy("order"), [projectId], []);
@@ -109,6 +122,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
       setExisting(d ?? null);
       if (!d) return;
       setDurationSec(d.durationSec);
+      setCalibration(d.calibration ?? null);
       if (isTrackDrawing(d)) {
         switchMode("track");
         keyframesRef.current = d.keyframes;
@@ -166,6 +180,27 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     switchMode(m);
   }
 
+  function startCalibration() {
+    finishMultiPoint();
+    const last = useAppStore.getState().lastCalibration;
+    const preset = PITCH_PRESETS[0];
+    setCalibDraft(
+      calibration ?? last ?? { corners: DEFAULT_CORNERS, widthM: preset.widthM, depthM: preset.depthM, presetId: preset.id }
+    );
+  }
+
+  function finishCalibration() {
+    if (!calibDraft) return;
+    if (!isConvexQuad(calibDraft.corners) || !makeProjection(calibDraft)) {
+      setSaveNote("Rohy ihriska nedávajú zmysel — poradie 1 → 2 → 3 → 4 musí ísť dookola obdĺžnika.");
+      return;
+    }
+    setCalibration(calibDraft);
+    setLastCalibration(calibDraft);
+    setCalibDraft(null);
+    setSaveNote(null);
+  }
+
   function handlePointerDown(p: Point) {
     setSaveNote(null);
     if (activeTool === "move") {
@@ -219,6 +254,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
       id: existing?.id ?? newId(),
       projectId,
       durationSec,
+      ...(calibration ? { calibration } : {}),
       createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
     };
@@ -249,6 +285,12 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   let hint: string;
   if (saveNote) {
     hint = saveNote;
+  } else if (calibDraft) {
+    hint = "Nastavuješ ihrisko — posuň 4 body na rohy obdĺžnika na tráve, potom Hotovo.";
+  } else if (activeTool === "offsideLine") {
+    hint = "Klikni na hráča (napr. posledného obrancu) — čiara pôjde cez celé ihrisko rovnobežne s bránkovou čiarou.";
+  } else if (activeTool === "measure") {
+    hint = "Ťahaj od jedného bodu na tráve k druhému — ukáže sa vzdialenosť v metroch.";
   } else if (activeTool === "move") {
     hint = "Chyť tvar a potiahni. Za úchyt meníš tvar, inde presúvaš celý tvar. Delete zmaže vybraný.";
   } else if (activeTool === "spotlight") {
@@ -272,6 +314,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
           width={rect.width}
           height={rect.height}
           shapes={editor.shapes}
+          calibration={calibration}
           draft={editor.draft}
           editable
           activeTool={activeTool}
@@ -281,6 +324,9 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
           onPointerUpPoint={handlePointerUp}
           onDoubleClick={handleDoubleClick}
         />
+        {calibDraft && (
+          <CalibrationOverlay width={rect.width} height={rect.height} calibration={calibDraft} onChange={setCalibDraft} />
+        )}
         {textPrompt && (
           <TextInputPopup
             point={textPrompt}
@@ -337,6 +383,21 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
               const p = players?.find((x) => x.id === id);
               if (p) applyLabel(playerLabel(p));
             }}
+            calibration={calibDraft ?? calibration}
+            calibrating={!!calibDraft}
+            onStartCalibration={startCalibration}
+            onFinishCalibration={finishCalibration}
+            onCancelCalibration={() => {
+              setCalibDraft(null);
+              setSaveNote(null);
+            }}
+            onRemoveCalibration={() => {
+              setCalibration(null);
+              if (activeTool === "offsideLine" || activeTool === "measure") setActiveTool("arrow");
+            }}
+            onCalibrationDims={(patch) => setCalibDraft((c) => (c ? { ...c, ...patch } : c))}
+            drawOnGround={drawOnGround}
+            onDrawOnGroundChange={setDrawOnGround}
           />,
           toolbarSlot
         )}

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Clip, DrawTool, Team } from "@/types";
+import type { Clip, DrawTool, PitchCalibration, Team } from "@/types";
 
 export type SidebarTab = "tagy" | "klipy" | "statistiky" | "supiska";
 
@@ -45,6 +45,12 @@ interface AppState {
   // bočný panel, do ktorého sa počas kreslenia vykreslia nástroje (portál)
   drawingPanelEl: HTMLElement | null;
   setDrawingPanelEl: (el: HTMLElement | null) => void;
+  // posledné nastavenie ihriska – východisko pre ďalšiu kalibráciu (kamera Veo sa hýbe, preto sa nepoužije automaticky)
+  lastCalibration: PitchCalibration | null;
+  setLastCalibration: (c: PitchCalibration | null) => void;
+  // kresliť nové tvary „na trávu“, keď je ihrisko nastavené
+  drawOnGround: boolean;
+  setDrawOnGround: (v: boolean) => void;
 
   // Freeze-frame prehrávanie kresieb
   frozenDrawingId: string | null;
@@ -106,6 +112,10 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveStrokeWidth: (w) => set({ activeStrokeWidth: w }),
   drawingPanelEl: null,
   setDrawingPanelEl: (el) => set({ drawingPanelEl: el }),
+  lastCalibration: null,
+  setLastCalibration: (c) => set({ lastCalibration: c }),
+  drawOnGround: true,
+  setDrawOnGround: (v) => set({ drawOnGround: v }),
 
   frozenDrawingId: null,
   setFrozenDrawingId: (id) => set({ frozenDrawingId: id }),

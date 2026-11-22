@@ -1,4 +1,5 @@
-import type { DrawTool, DrawingMode, Player } from "@/types";
+import type { DrawTool, DrawingMode, PitchCalibration, Player } from "@/types";
+import { PITCH_PRESETS } from "@/lib/drawing/pitch";
 import {
   ArrowUpRight,
   Minus,
@@ -16,8 +17,14 @@ import {
   Eraser,
   Play,
   Flashlight,
+  Flag,
+  Ruler,
+  Grid3x3,
 } from "lucide-react";
 import clsx from "clsx";
+
+// nástroje, ktoré potrebujú nastavené ihrisko (perspektívu)
+const NEEDS_PITCH: DrawTool[] = ["offsideLine", "measure"];
 
 const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNode }[] = [
   { kind: "move", label: "Presunúť", title: "Chyť tvar alebo jeho bod a potiahni", icon: <Move size={18} /> },
@@ -29,6 +36,8 @@ const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNo
   { kind: "polyline", label: "Línia", title: "Spojnica hráčov (napr. línia obrany)", icon: <Spline size={18} /> },
   { kind: "zone", label: "Zóna", title: "Zóna", icon: <Hexagon size={18} /> },
   { kind: "text", label: "Text", title: "Text", icon: <Type size={18} /> },
+  { kind: "offsideLine", label: "Ofsajd", title: "Čiara cez celé ihrisko rovnobežne s bránkovou čiarou (potrebuje nastavené ihrisko)", icon: <Flag size={18} /> },
+  { kind: "measure", label: "Meter", title: "Vzdialenosť dvoch bodov v metroch (potrebuje nastavené ihrisko)", icon: <Ruler size={18} /> },
 ];
 
 const COLORS = ["#ef4444", "#3b82f6", "#eab308", "#22c55e", "#ffffff", "#a855f7", "#f97316"];
@@ -73,6 +82,117 @@ interface Props {
   onLabelCommit: () => void;
   players: Player[];
   onPickPlayer: (id: string) => void;
+  // ihrisko 3D
+  calibration: PitchCalibration | null;
+  calibrating: boolean;
+  onStartCalibration: () => void;
+  onFinishCalibration: () => void;
+  onCancelCalibration: () => void;
+  onRemoveCalibration: () => void;
+  onCalibrationDims: (patch: Partial<Pick<PitchCalibration, "widthM" | "depthM" | "presetId">>) => void;
+  drawOnGround: boolean;
+  onDrawOnGroundChange: (v: boolean) => void;
+}
+
+function formatDim(n: number) {
+  return n.toString().replace(".", ",");
+}
+
+function PitchCard(props: Props) {
+  const c = props.calibration;
+  if (props.calibrating && c) {
+    const preset = PITCH_PRESETS.find((p) => p.id === c.presetId) ?? PITCH_PRESETS[PITCH_PRESETS.length - 1];
+    return (
+      <div className="card p-3 space-y-2 ring-1 ring-amber-400/60">
+        <h3 className={sectionTitle}>Nastavenie ihriska</h3>
+        <p className="text-xs text-gray-300">
+          Potiahni biele body <b>1</b> a <b>2</b> na rohy pri <b>bránkovej čiare</b>, žlté <b>3</b> a <b>4</b> na protiľahlé rohy.
+          Keď žltá mriežka sedí na čiarach trávnika, je to správne.
+        </p>
+        <select
+          className="input"
+          value={preset.id}
+          onChange={(e) => {
+            const p = PITCH_PRESETS.find((x) => x.id === e.target.value);
+            if (p) props.onCalibrationDims({ presetId: p.id, widthM: p.widthM, depthM: p.depthM });
+          }}
+        >
+          {PITCH_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-2 gap-2 text-xs text-gray-400">
+          <label className="space-y-0.5">
+            <span>Šírka 1→2 (m)</span>
+            <input
+              type="number"
+              step={0.1}
+              min={1}
+              className="input"
+              value={c.widthM}
+              onChange={(e) => props.onCalibrationDims({ widthM: Number(e.target.value), presetId: "custom" })}
+            />
+          </label>
+          <label className="space-y-0.5">
+            <span>Hĺbka 2→3 (m)</span>
+            <input
+              type="number"
+              step={0.1}
+              min={1}
+              className="input"
+              value={c.depthM}
+              onChange={(e) => props.onCalibrationDims({ depthM: Number(e.target.value), presetId: "custom" })}
+            />
+          </label>
+        </div>
+        <p className="text-[11px] text-gray-500">Pri žiackych ihriskách sú územia menšie — rozmery si zmeraj alebo uprav.</p>
+        <div className="flex gap-2">
+          <button className="btn-primary flex-1" onClick={props.onFinishCalibration}>
+            <Check size={15} /> Hotovo
+          </button>
+          <button className="btn-secondary" onClick={props.onCancelCalibration}>
+            Zrušiť
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="card p-3 space-y-2">
+      <h3 className={sectionTitle}>Ihrisko 3D</h3>
+      {c ? (
+        <>
+          <p className="text-xs text-gray-400">
+            Nastavené podľa obdĺžnika {formatDim(c.widthM)} × {formatDim(c.depthM)} m.
+          </p>
+          <label className="flex items-center gap-2 text-sm text-gray-200">
+            <input type="checkbox" checked={props.drawOnGround} onChange={(e) => props.onDrawOnGroundChange(e.target.checked)} />
+            Kresliť na trávu (perspektíva)
+          </label>
+          <div className="grid grid-cols-2 gap-1">
+            <button className={smallBtn} onClick={props.onStartCalibration}>
+              <Grid3x3 size={13} /> Upraviť
+            </button>
+            <button className={smallBtn} onClick={props.onRemoveCalibration}>
+              <X size={13} /> Zrušiť ihrisko
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-gray-400">
+            Prilož 4 rohy šestnástky (alebo iného obdĺžnika na tráve) — kruhy, svetlo a šípky potom ležia na tráve, pribudne
+            ofsajdová čiara a meranie v metroch.
+          </p>
+          <button className="btn-secondary w-full" onClick={props.onStartCalibration}>
+            <Grid3x3 size={15} /> Nastaviť ihrisko
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 const sectionTitle = "text-xs font-semibold uppercase tracking-wide text-gray-400";
@@ -101,14 +221,17 @@ export default function DrawingToolbar(props: Props) {
         {props.hint && <p className="rounded bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200">{props.hint}</p>}
       </div>
 
+      <PitchCard {...props} />
+
       <div className="card p-3 space-y-3">
         <div className="grid grid-cols-4 gap-1">
           {TOOLS.map((t) => (
             <button
               key={t.kind}
               title={t.title}
+              disabled={NEEDS_PITCH.includes(t.kind) && !props.calibration}
               className={clsx(
-                "flex flex-col items-center gap-0.5 rounded-md py-1.5 text-[11px] transition-colors",
+                "flex flex-col items-center gap-0.5 rounded-md py-1.5 text-[11px] transition-colors disabled:opacity-30",
                 props.activeTool === t.kind ? "bg-emerald-600 text-white" : "bg-pitch-900 text-gray-300 hover:bg-pitch-700"
               )}
               onClick={() => props.onToolChange(t.kind)}

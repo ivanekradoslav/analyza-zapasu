@@ -1,5 +1,6 @@
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import type { Shape } from "@/types";
+import { drawLayers } from "@/lib/drawing/keyframes";
+import type { PitchCalibration, Shape } from "@/types";
 
 export const EXPORT_WIDTH = 1280;
 export const EXPORT_HEIGHT = 720;
@@ -27,10 +28,14 @@ function makeCanvas(w: number, h: number) {
 }
 
 /** Vygeneruje transparentné PNG s kresbou (šípky, čiary, zóny...) na prekrytie videa. */
-export async function renderDrawingOverlayPng(shapes: Shape[], width = EXPORT_WIDTH, height = EXPORT_HEIGHT): Promise<Uint8Array> {
+export async function renderDrawingOverlayPng(
+  layers: { shapes: Shape[]; calibration?: PitchCalibration }[],
+  width = EXPORT_WIDTH,
+  height = EXPORT_HEIGHT
+): Promise<Uint8Array> {
   const canvas = makeCanvas(width, height);
   const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
-  drawShapesOnCanvas(ctx, shapes, width, height);
+  drawLayers((shapes, calibration, clear) => drawShapesOnCanvas(ctx, shapes, width, height, calibration, { clear }), layers);
   return canvasToPng(canvas);
 }
 

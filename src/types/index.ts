@@ -63,13 +63,17 @@ export type ShapeKind =
   | "polyline"
   | "zone"
   | "text"
-  | "spotlight";
+  | "spotlight"
+  | "offsideLine"
+  | "measure";
 
 export interface BaseShape {
   id: string;
   kind: ShapeKind;
   color: string;
   strokeWidth: number; // v jednotkách normalizovaného priestoru * referenčná šírka
+  /** Kreslí sa „na trávu“ v perspektíve ihriska (potrebuje kalibráciu kresby). */
+  ground?: boolean;
 }
 
 export interface ArrowShape extends BaseShape {
@@ -87,6 +91,7 @@ export interface EllipseShape extends BaseShape {
   center: Point;
   radiusX: number;
   radiusY: number;
+  radiusM?: number; // pri ground: polomer na tráve v metroch
 }
 
 export interface PolylineShape extends BaseShape {
@@ -112,7 +117,18 @@ export interface SpotlightShape extends BaseShape {
   center: Point; // miesto dopadu svetla pri nohách
   radiusX: number;
   radiusY: number;
+  radiusM?: number; // pri ground: polomer svetla na tráve v metroch
   label?: string; // napr. "#14 Pelikán"
+}
+
+export interface OffsideLineShape extends BaseShape {
+  kind: "offsideLine"; // čiara cez celú šírku ihriska rovnobežne s bránkovou čiarou
+  points: [Point];
+}
+
+export interface MeasureShape extends BaseShape {
+  kind: "measure"; // vzdialenosť dvoch bodov na tráve v metroch
+  points: [Point, Point];
 }
 
 export type Shape =
@@ -122,7 +138,9 @@ export type Shape =
   | PolylineShape
   | ZoneShape
   | TextShape
-  | SpotlightShape;
+  | SpotlightShape
+  | OffsideLineShape
+  | MeasureShape;
 
 export type DrawTool = ShapeKind | "move";
 
@@ -135,6 +153,14 @@ export interface Keyframe {
   shapes: Shape[]; // rovnaké id tvaru naprieč kľúčovými bodmi = ten istý tvar
 }
 
+/** Perspektíva ihriska: 4 rohy známeho obdĺžnika na tráve (v poradí 1–4) a jeho rozmery. */
+export interface PitchCalibration {
+  corners: [Point, Point, Point, Point]; // 1,2 = rohy na bránkovej čiare; 3,4 = protiľahlé rohy
+  widthM: number; // vzdialenosť 1→2 (pozdĺž bránkovej čiary)
+  depthM: number; // vzdialenosť 2→3 (do ihriska)
+  presetId?: string;
+}
+
 export interface Drawing {
   id: string;
   projectId: string;
@@ -143,6 +169,7 @@ export interface Drawing {
   shapes: Shape[]; // track: tvary prvého kľúčového bodu
   mode?: DrawingMode; // chýba = "freeze" (kresby zo staršej verzie)
   keyframes?: Keyframe[]; // len pre "track", zoradené podľa času
+  calibration?: PitchCalibration; // perspektíva ihriska pre tvary „na tráve“
   createdAt: number;
   updatedAt: number;
 }

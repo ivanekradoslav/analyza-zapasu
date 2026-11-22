@@ -1,4 +1,4 @@
-import type { Drawing, Keyframe, Point, Shape } from "@/types";
+import type { Drawing, Keyframe, PitchCalibration, Point, Shape } from "@/types";
 
 export const KEYFRAME_EPSILON = 0.05;
 
@@ -29,8 +29,12 @@ function lerpShape(a: Shape, b: Shape, f: number): Shape {
     case "arrow":
     case "line":
     case "dashedLine":
+    case "measure":
       if (b.kind !== a.kind) return a;
       return { ...a, points: lerpPoints(a.points, b.points, f) as [Point, Point] };
+    case "offsideLine":
+      if (b.kind !== a.kind) return a;
+      return { ...a, points: [lerpPoint(a.points[0], b.points[0], f)] };
     case "ellipse":
     case "spotlight":
       if (b.kind !== a.kind) return a;
@@ -39,6 +43,7 @@ function lerpShape(a: Shape, b: Shape, f: number): Shape {
         center: lerpPoint(a.center, b.center, f),
         radiusX: lerp(a.radiusX, b.radiusX, f),
         radiusY: lerp(a.radiusY, b.radiusY, f),
+        ...(a.radiusM !== undefined && b.radiusM !== undefined ? { radiusM: lerp(a.radiusM, b.radiusM, f) } : {}),
       };
     case "polyline":
     case "zone":
@@ -74,14 +79,28 @@ export function shapesAtTime(keyframes: Keyframe[], t: number): Shape[] {
 
 /** Tvary všetkých pohyblivých kresieb, ktoré sú v čase t viditeľné. */
 export function activeTrackShapes(drawings: Drawing[], t: number): Shape[] {
-  const out: Shape[] = [];
+  return activeTrackLayers(drawings, t).flatMap((l) => l.shapes);
+}
+
+/** Ako activeTrackShapes, ale po kresbách — každá má vlastnú perspektívu ihriska. */
+export function activeTrackLayers(drawings: Drawing[], t: number): { shapes: Shape[]; calibration?: PitchCalibration }[] {
+  const out: { shapes: Shape[]; calibration?: PitchCalibration }[] = [];
   for (const d of drawings) {
     if (!isTrackDrawing(d)) continue;
     const { start, end } = trackWindow(d);
     if (t < start || t > end) continue;
-    out.push(...shapesAtTime(d.keyframes, t));
+    out.push({ shapes: shapesAtTime(d.keyframes, t), calibration: d.calibration });
   }
   return out;
+}
+
+/** Vykreslí vrstvy kresieb na jeden canvas (prvá vrstva ho vyčistí). */
+export function drawLayers(
+  draw: (shapes: Shape[], calibration: PitchCalibration | undefined, clear: boolean) => void,
+  layers: { shapes: Shape[]; calibration?: PitchCalibration }[]
+) {
+  if (layers.length === 0) draw([], undefined, true);
+  layers.forEach((l, i) => draw(l.shapes, l.calibration, i === 0));
 }
 
 export function upsertKeyframe(keyframes: Keyframe[], time: number, shapes: Shape[]): Keyframe[] {

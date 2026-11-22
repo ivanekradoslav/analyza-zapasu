@@ -1,6 +1,6 @@
 import { getFFmpeg, mountInputFile, terminateFFmpeg } from "@/lib/ffmpeg/ffmpegClient";
 import { renderDrawingOverlayPng, renderTitleCardPng, EXPORT_WIDTH, EXPORT_HEIGHT } from "@/lib/ffmpeg/overlayRenderer";
-import { activeTrackShapes, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
+import { activeTrackLayers, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { formatMinute } from "@/lib/utils/time";
 import type { Clip, Drawing, Player, TagEvent, TagType } from "@/types";
 
@@ -121,7 +121,7 @@ export class PlaylistExporter {
         for (let f = 0; f < frameCount; f++) {
           this.checkCancelled();
           const t = clip.inPoint + winStart + f / TRACK_FPS;
-          await ffmpeg.writeFile(frameName(f), await renderDrawingOverlayPng(activeTrackShapes(clipTracks, t)));
+          await ffmpeg.writeFile(frameName(f), await renderDrawingOverlayPng(activeTrackLayers(clipTracks, t)));
           if (f % TRACK_FPS === 0) {
             onProgress({
               fraction: Math.min(0.98, doneSteps / totalSteps),
@@ -192,7 +192,7 @@ export class PlaylistExporter {
         report(`Extrahujem snímku ${i + 1}.${k + 1}`);
 
         const drawingPng = `drawing_${i}_${k}.png`;
-        const overlayPng = await renderDrawingOverlayPng(drawing.shapes);
+        const overlayPng = await renderDrawingOverlayPng([{ shapes: drawing.shapes, calibration: drawing.calibration }]);
         await ffmpeg.writeFile(drawingPng, overlayPng);
 
         const frozenPng = `frozen_${i}_${k}.png`;

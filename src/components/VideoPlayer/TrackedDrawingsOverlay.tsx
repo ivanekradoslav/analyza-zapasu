@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import { activeTrackShapes, isTrackDrawing } from "@/lib/drawing/keyframes";
+import { activeTrackLayers, drawLayers, isTrackDrawing } from "@/lib/drawing/keyframes";
 import { useAppStore } from "@/store/useAppStore";
 import type { Drawing } from "@/types";
 
@@ -24,7 +24,10 @@ export default function TrackedDrawingsOverlay({ drawings, width, height }: { dr
       const t = useAppStore.getState().videoEl?.currentTime ?? 0;
       if (t !== lastT) {
         lastT = t;
-        drawShapesOnCanvas(ctx, activeTrackShapes(tracks, t), width, height);
+        drawLayers(
+          (shapes, calibration, clear) => drawShapesOnCanvas(ctx, shapes, width, height, calibration, { clear }),
+          activeTrackLayers(tracks, t)
+        );
       }
       raf = requestAnimationFrame(tick);
     };

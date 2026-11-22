@@ -19,7 +19,7 @@ import {
   type StreamTargetChunk,
 } from "mediabunny";
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import { activeTrackShapes, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
+import { activeTrackLayers, drawLayers, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { drawTitleCard } from "@/lib/ffmpeg/overlayRenderer";
 import { buildTitleLines, ExportCancelled, type ExportInput, type ExportProgress } from "@/lib/ffmpeg/exporter";
 import type { Drawing } from "@/types";
@@ -201,9 +201,16 @@ export class WebCodecsExporter {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
         ctx.drawImage(frame, rectX, rectY, rectW, rectH);
-        const shapes = [...(clipTracks.length ? activeTrackShapes(clipTracks, srcT) : []), ...(freeze?.shapes ?? [])];
-        if (shapes.length) {
-          drawShapesOnCanvas(overlayCtx, shapes, rectW, rectH);
+        // každá kresba má vlastnú perspektívu ihriska, preto sa kreslí po vrstvách
+        const layers = [
+          ...(clipTracks.length ? activeTrackLayers(clipTracks, srcT) : []),
+          ...(freeze ? [{ shapes: freeze.shapes, calibration: freeze.calibration }] : []),
+        ].filter((l) => l.shapes.length > 0);
+        if (layers.length) {
+          drawLayers(
+            (shapes, calibration, clear) => drawShapesOnCanvas(overlayCtx, shapes, rectW, rectH, calibration, { clear }),
+            layers
+          );
           ctx.drawImage(overlay, rectX, rectY);
         }
         if (srcT - clip.inPoint < TITLE_SECONDS) drawTitleCard(ctx, titleLines, W, H);

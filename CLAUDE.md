@@ -58,7 +58,7 @@ Project 1---* Clip (inPoint/outPoint, voliteľne sourceTagEventId)
 Project 1---* Playlist (clipIds: string[] – poradie je poradie prehrávania/exportu)
 ```
 
-Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight`),
+Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight | offsideLine | measure`),
 `spotlight` = svetelný kužeľ zhora na hráča (úzky vysoko – 7× polomer – a k zemi
 sa rozširuje, pri nohách svetlo na tráve bez obrysu; voliteľný štítok `label`
 pod hráčom, napr. zo súpisky; `center`/`radiusX/Y` = miesto dopadu pri nohách),
@@ -74,6 +74,28 @@ Drawing má `mode`:
   `id` v susedných kľúčových bodoch sa lineárne interpoluje (`src/lib/drawing/keyframes.ts`).
   Viditeľná je od prvého kľúčového bodu po posledný + `durationSec` (držanie).
   `timestamp`/`shapes` = prvý kľúčový bod (pre zoradenie a kompatibilitu).
+
+### Ihrisko 3D – perspektíva (`src/lib/drawing/pitch.ts`)
+
+- `Drawing.calibration?: PitchCalibration` = 4 rohy známeho obdĺžnika na tráve v obraze
+  (1,2 na bránkovej čiare; 3,4 protiľahlé) + `widthM` (1→2) a `depthM` (2→3). Predvoľby:
+  šestnástka 40,32×16,5, malé vápno 18,32×5,5, vlastné (žiacke ihriská sú menšie).
+- Z toho homografia (DLT, 4 body, Gauss) ihrisko v metroch ↔ normalizovaný obraz
+  (`makeProjection` → `toImage`/`toPitch`; `apply` vracia null pre body za kamerou).
+- Kalibrácia je **na kresbe, nie na projekte** – kamera Veo sa hýbe a zoomuje, perspektíva
+  platí len pre daný záber. `store.lastCalibration` je len východisko pre ďalšie nastavenie.
+  Pohyblivá kresba má jednu kalibráciu pre všetky kľúčové body (sedí len pri statickej kamere).
+- Tvary s `ground: true` (šípka, čiara, beh, kruh, svetlo, línia) sa v `renderShapes`
+  kreslia na trávu: kruh/svetlo = kruh s `radiusM` (metre) premietnutý do obrazu, šípky
+  a čiary = pásy na tráve (`groundHalfWidth`). Body tvarov ostávajú v obrazových
+  súradniciach; bez kalibrácie sa kreslia ploché (radiusX/Y sa pri tvorbe tiež ukladajú).
+- Nové tvary: `offsideLine` (1 bod; čiara y=konšt. cez celé ihrisko po 4 m úsekoch,
+  vynechá úseky za horizontom) a `measure` (2 body + popisok v metroch).
+  Oba nástroje sú v toolbare vypnuté bez nastaveného ihriska.
+- Editor: karta „Ihrisko 3D“ → `CalibrationOverlay` (SVG, 4 úchyty, žltá mriežka po 5 m
+  ako kontrola, prekrížený štvoruholník = červená). `drawShapesOnCanvas(..., calibration,
+  {clear})`; viac kresieb naraz (pohyblivé + freeze, export) sa kreslí po vrstvách
+  (`activeTrackLayers` + `drawLayers`), každá so svojou kalibráciou.
 
 ## Architektúra komponentov
 

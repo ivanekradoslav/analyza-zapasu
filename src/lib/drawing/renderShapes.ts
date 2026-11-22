@@ -1,5 +1,6 @@
 import { spotlightBeamHeightPx } from "@/lib/drawing/shapeGeometry";
-import type { Shape, SpotlightShape } from "@/types";
+import { formatMeters, makeProjection, pitchDistance, type PitchProjection } from "@/lib/drawing/pitch";
+import type { PitchCalibration, Point, Shape, SpotlightShape } from "@/types";
 
 function withAlpha(hex: string, alpha: number) {
   const n = parseInt(hex.slice(1), 16);
@@ -64,17 +65,28 @@ function drawSpotlight(ctx: CanvasRenderingContext2D, shape: SpotlightShape, wid
   }
 }
 
+const projectionCache = new WeakMap<PitchCalibration, PitchProjection | null>();
+function projectionFor(c: PitchCalibration | null | undefined) {
+  if (!c) return null;
+  if (!projectionCache.has(c)) projectionCache.set(c, makeProjection(c));
+  return projectionCache.get(c) ?? null;
+}
+
 // Vykreslí zoznam tvarov (normalizované súradnice 0..1) na canvas danej
 // pixelovej veľkosti. Používa sa pri živom prekrytí videa aj pri generovaní
 // PNG prekrytia pre export (musí byť 1:1 rovnaký výsledok).
+// calibration = perspektíva ihriska kresby; tvary s ground sa bez nej kreslia ploché.
 export function drawShapesOnCanvas(
   ctx: CanvasRenderingContext2D,
   shapes: Shape[],
   width: number,
-  height: number
+  height: number,
+  calibration?: PitchCalibration | null,
+  options: { clear?: boolean } = {}
 ) {
-  ctx.clearRect(0, 0, width, height);
+  if (options.clear !== false) ctx.clearRect(0, 0, width, height);
   const refUnit = Math.min(width, height);
+  const proj = projectionFor(calibration);
 
   for (const shape of shapes) {
     ctx.save();
@@ -83,6 +95,11 @@ export function drawShapesOnCanvas(
     ctx.lineWidth = (shape.strokeWidth / 400) * refUnit;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+
+    if (proj && (shape.ground || shape.kind === "offsideLine") && drawGroundShape(ctx, shape, proj, width, height)) {
+      ctx.restore();
+      continue;
+    }
 
     switch (shape.kind) {
       case "arrow": {
@@ -151,6 +168,18 @@ export function drawShapesOnCanvas(
       case "spotlight":
         drawSpotlight(ctx, shape, width, height);
         break;
+      case "offsideLine": {
+        // bez perspektívy: vodorovná čiara cez celý obraz
+        const y = shape.points[0].y * height;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+        break;
+      }
+      case "measure":
+        drawMeasure(ctx, shape.points, width, height, proj ? pitchDistance(proj, shape.points[0], shape.points[1]) : null);
+        break;
       case "text": {
         const fontPx = (shape.fontSize / 100) * height;
         ctx.font = `700 ${fontPx}px ui-sans-serif, system-ui, sans-serif`;
@@ -184,4 +213,209 @@ function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: nu
   ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
   ctx.closePath();
   ctx.fill();
+}
+
+// ---------- Tvary „na tráve“ (perspektíva ihriska) ----------
+
+type Px = { x: number; y: number };
+
+/** Body na ihrisku (metre) → pixely; null, ak niektorý bod nejde zobraziť (za horizontom). */
+function polyPx(proj: PitchProjection, pts: Point[], w: number, h: number): Px[] | null {
+  const out: Px[] = [];
+  for (const p of pts) {
+    const q = proj.toImage(p);
+    if (!q) return null;
+    out.push({ x: q.x * w, y: q.y * h });
+  }
+  return out;
+}
+
+function pathPoly(ctx: CanvasRenderingContext2D, pts: Px[], close = true) {
+  ctx.beginPath();
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+  if (close) ctx.closePath();
+}
+
+function circleOnPitch(center: Point, r: number, n = 56): Point[] {
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    return { x: center.x + Math.cos(a) * r, y: center.y + Math.sin(a) * r };
+  });
+}
+
+/** Pás na tráve z bodu a do b s polovičnou šírkou hw (metre). */
+function stripOnPitch(a: Point, b: Point, hw: number): Point[] {
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = (-(b.y - a.y) / len) * hw;
+  const ny = ((b.x - a.x) / len) * hw;
+  return [
+    { x: a.x + nx, y: a.y + ny },
+    { x: b.x + nx, y: b.y + ny },
+    { x: b.x - nx, y: b.y - ny },
+    { x: a.x - nx, y: a.y - ny },
+  ];
+}
+
+/** Polovičná šírka čiary na tráve v metroch podľa hrúbky (1–8). */
+export function groundHalfWidth(strokeWidth: number) {
+  return 0.07 + strokeWidth * 0.045;
+}
+
+function fillWithOutline(ctx: CanvasRenderingContext2D, pts: Px[]) {
+  pathPoly(ctx, pts);
+  ctx.save();
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  ctx.stroke();
+  ctx.restore();
+  ctx.fill();
+}
+
+function drawGroundShape(ctx: CanvasRenderingContext2D, shape: Shape, proj: PitchProjection, w: number, h: number): boolean {
+  switch (shape.kind) {
+    case "ellipse": {
+      const c = proj.toPitch(shape.center);
+      const ring = c && polyPx(proj, circleOnPitch(c, shape.radiusM ?? 1), w, h);
+      if (!ring) return false;
+      ctx.save();
+      ctx.globalAlpha = 0.18;
+      pathPoly(ctx, ring);
+      ctx.fill();
+      ctx.restore();
+      pathPoly(ctx, ring);
+      ctx.stroke();
+      return true;
+    }
+    case "spotlight": {
+      const c = proj.toPitch(shape.center);
+      const ring = c && polyPx(proj, circleOnPitch(c, shape.radiusM ?? 1.2), w, h);
+      if (!ring) return false;
+      const xs = ring.map((p) => p.x);
+      const ys = ring.map((p) => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      drawSpotlight(
+        ctx,
+        {
+          ...shape,
+          center: { x: (minX + maxX) / 2 / w, y: (minY + maxY) / 2 / h },
+          radiusX: (maxX - minX) / 2 / w,
+          radiusY: (maxY - minY) / 2 / h,
+        },
+        w,
+        h
+      );
+      return true;
+    }
+    case "arrow":
+    case "line":
+    case "dashedLine": {
+      const a = proj.toPitch(shape.points[0]);
+      const b = proj.toPitch(shape.points[1]);
+      if (!a || !b) return false;
+      const len = Math.hypot(b.x - a.x, b.y - a.y);
+      if (len < 0.05) return true;
+      const ux = (b.x - a.x) / len, uy = (b.y - a.y) / len;
+      const hw = groundHalfWidth(shape.strokeWidth);
+
+      if (shape.kind === "dashedLine") {
+        const dash = 1.1, gap = 0.75;
+        for (let d = 0; d < len; d += dash + gap) {
+          const e = Math.min(len, d + dash);
+          const q = polyPx(proj, stripOnPitch({ x: a.x + ux * d, y: a.y + uy * d }, { x: a.x + ux * e, y: a.y + uy * e }, hw), w, h);
+          if (q) fillWithOutline(ctx, q);
+        }
+        return true;
+      }
+      const headLen = shape.kind === "arrow" ? Math.min(len * 0.45, 0.9 + hw * 6) : 0;
+      const shaftEnd = { x: b.x - ux * headLen, y: b.y - uy * headLen };
+      const shaft = polyPx(proj, stripOnPitch(a, shaftEnd, hw), w, h);
+      if (shaft) fillWithOutline(ctx, shaft);
+      if (shape.kind === "arrow") {
+        const hh = hw * 3.2;
+        const head = polyPx(
+          proj,
+          [{ x: shaftEnd.x - uy * hh, y: shaftEnd.y + ux * hh }, b, { x: shaftEnd.x + uy * hh, y: shaftEnd.y - ux * hh }],
+          w,
+          h
+        );
+        if (head) fillWithOutline(ctx, head);
+      }
+      return true;
+    }
+    case "polyline": {
+      if (shape.points.length < 2) return true;
+      pathPoly(ctx, shape.points.map((p) => ({ x: p.x * w, y: p.y * h })), false);
+      ctx.stroke();
+      // krúžky na tráve okolo hráčov v línii
+      for (const p of shape.points) {
+        const c = proj.toPitch(p);
+        const ring = c && polyPx(proj, circleOnPitch(c, 0.8, 36), w, h);
+        if (!ring) continue;
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        pathPoly(ctx, ring);
+        ctx.fill();
+        ctx.restore();
+        pathPoly(ctx, ring);
+        ctx.stroke();
+      }
+      return true;
+    }
+    case "offsideLine": {
+      const a = proj.toPitch(shape.points[0]);
+      if (!a) return false;
+      const hw = groundHalfWidth(shape.strokeWidth) * 0.8;
+      const cw = proj.calibration.widthM;
+      // úseky po 4 m cez celú šírku ihriska; tie za horizontom sa vynechajú
+      ctx.save();
+      ctx.shadowColor = shape.color;
+      ctx.shadowBlur = 8;
+      for (let x = -cw * 2; x < cw * 3; x += 4) {
+        const q = polyPx(proj, stripOnPitch({ x, y: a.y }, { x: x + 4.05, y: a.y }, hw), w, h);
+        if (!q) continue;
+        pathPoly(ctx, q);
+        ctx.fill();
+      }
+      ctx.restore();
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+function drawMeasure(ctx: CanvasRenderingContext2D, pts: [Point, Point], w: number, h: number, meters: number | null) {
+  const a = { x: pts[0].x * w, y: pts[0].y * h };
+  const b = { x: pts[1].x * w, y: pts[1].y * h };
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const nx = (-(b.y - a.y) / len) * 7;
+  const ny = ((b.x - a.x) / len) * 7;
+  ctx.setLineDash([ctx.lineWidth * 2.5, ctx.lineWidth * 1.5]);
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const p of [a, b]) {
+    ctx.beginPath();
+    ctx.moveTo(p.x - nx, p.y - ny);
+    ctx.lineTo(p.x + nx, p.y + ny);
+    ctx.stroke();
+  }
+  const text = meters === null ? "? m" : formatMeters(meters);
+  const fontPx = Math.max(12, h * 0.03);
+  ctx.font = "700 " + fontPx + "px ui-sans-serif, system-ui, sans-serif";
+  const tw = ctx.measureText(text).width;
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const bw = tw + fontPx * 0.9;
+  const bh = fontPx * 1.5;
+  ctx.fillStyle = "rgba(15, 23, 20, 0.85)";
+  ctx.beginPath();
+  ctx.roundRect(mx - bw / 2, my - bh - 6, bw, bh, bh / 2.5);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, mx, my - bh / 2 - 6);
 }

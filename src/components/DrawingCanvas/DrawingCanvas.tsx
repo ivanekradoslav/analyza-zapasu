@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
 import { controlPoints } from "@/lib/drawing/shapeGeometry";
-import type { DrawTool, Point, Shape } from "@/types";
+import type { DrawTool, PitchCalibration, Point, Shape } from "@/types";
 
 interface Props {
   width: number;
   height: number;
   shapes: Shape[];
+  calibration?: PitchCalibration | null;
   draft: Shape | null;
   editable: boolean;
   activeTool: DrawTool;
@@ -21,6 +22,7 @@ export default function DrawingCanvas({
   width,
   height,
   shapes,
+  calibration,
   draft,
   editable,
   activeTool,
@@ -42,7 +44,7 @@ export default function DrawingCanvas({
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawShapesOnCanvas(ctx, draft ? [...shapes, draft] : shapes, width, height);
+    drawShapesOnCanvas(ctx, draft ? [...shapes, draft] : shapes, width, height, calibration);
 
     if (showHandles) {
       for (const shape of shapes) {
@@ -58,7 +60,7 @@ export default function DrawingCanvas({
         }
       }
     }
-  }, [shapes, draft, width, height, showHandles, selectedId]);
+  }, [shapes, draft, width, height, showHandles, selectedId, calibration]);
 
   function toNormalized(e: React.PointerEvent): Point {
     const rect = canvasRef.current!.getBoundingClientRect();
