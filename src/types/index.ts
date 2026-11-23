@@ -65,7 +65,8 @@ export type ShapeKind =
   | "text"
   | "spotlight"
   | "offsideLine"
-  | "measure";
+  | "measure"
+  | "movePlayer";
 
 export interface BaseShape {
   id: string;
@@ -97,12 +98,18 @@ export interface EllipseShape extends BaseShape {
 export interface PolylineShape extends BaseShape {
   kind: "polyline"; // spojnica medzi hráčmi (napr. línia obrany)
   points: Point[];
+  showDistances?: boolean; // pri nastavenom ihrisku: vzdialenosti medzi susednými hráčmi v metroch
 }
 
 export interface ZoneShape extends BaseShape {
   kind: "zone"; // polygón so zvýraznenou výplňou
   points: Point[];
   fillOpacity: number;
+}
+
+export interface MovePlayerShape extends BaseShape {
+  kind: "movePlayer"; // hráč odkiaľ → kam mal ísť (krúžok, dráha, „duch“ hráča na cieľovom mieste)
+  points: [Point, Point];
 }
 
 export interface TextShape extends BaseShape {
@@ -140,7 +147,8 @@ export type Shape =
   | TextShape
   | SpotlightShape
   | OffsideLineShape
-  | MeasureShape;
+  | MeasureShape
+  | MovePlayerShape;
 
 export type DrawTool = ShapeKind | "move";
 

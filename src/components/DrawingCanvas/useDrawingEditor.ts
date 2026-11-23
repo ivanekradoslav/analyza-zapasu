@@ -8,10 +8,11 @@ import type { Point, Shape, ShapeKind } from "@/types";
 export interface GroundContext {
   proj: PitchProjection | null;
   ground: boolean;
+  lineDistances: boolean; // nová línia ukáže vzdialenosti medzi hráčmi (pri nastavenom ihrisku)
 }
 
 // tvary, ktoré vedia ležať na tráve
-const GROUND_KINDS: ShapeKind[] = ["arrow", "line", "dashedLine", "ellipse", "spotlight", "polyline"];
+const GROUND_KINDS: ShapeKind[] = ["arrow", "line", "dashedLine", "ellipse", "spotlight", "polyline", "zone", "movePlayer"];
 const MIN_RADIUS_M = 0.3;
 
 const MULTI_POINT_TOOLS: ShapeKind[] = ["polyline", "zone"];
@@ -67,6 +68,7 @@ function bodyHit(shape: Shape, p: Point, w: number, h: number) {
     case "dashedLine":
     case "polyline":
     case "measure":
+    case "movePlayer":
       return segmentsHit(shape.points, false);
     case "offsideLine":
       // čiara ide cez celé ihrisko — chytá sa za úchyt (bod, kde bola nakreslená)
@@ -99,7 +101,7 @@ function isDegenerate(shape: Shape) {
     return shape.radiusM < MIN_RADIUS_M;
   }
   if (shape.kind === "ellipse" || shape.kind === "spotlight") return shape.radiusX < MIN_SIZE && shape.radiusY < MIN_SIZE;
-  if (shape.kind === "arrow" || shape.kind === "line" || shape.kind === "dashedLine" || shape.kind === "measure") {
+  if (shape.kind === "arrow" || shape.kind === "line" || shape.kind === "dashedLine" || shape.kind === "measure" || shape.kind === "movePlayer") {
     const [a, b] = shape.points;
     return Math.hypot(a.x - b.x, a.y - b.y) < MIN_SIZE;
   }
@@ -212,6 +214,9 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround
         case "measure":
           setDraft({ ...base, kind: "measure", points: [point, point] });
           break;
+        case "movePlayer":
+          setDraft({ ...base, kind: "movePlayer", points: [point, point] });
+          break;
         case "offsideLine":
           setDraft({ ...base, kind: "offsideLine", points: [point] });
           break;
@@ -230,7 +235,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround
           } else if (tool === "zone") {
             setDraft({ ...base, kind: "zone", points: [point], fillOpacity: 0.25 });
           } else {
-            setDraft({ ...base, kind: "polyline", points: [point] });
+            setDraft({ ...base, kind: "polyline", points: [point], ...(g?.proj && g.lineDistances ? { showDistances: true } : {}) });
           }
           break;
         }
@@ -253,7 +258,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround
       const proj = getGroundRef.current?.().proj ?? null;
       const groundRadius = (center: Point) =>
         prev.ground && proj ? { radiusM: pitchDistance(proj, center, point) ?? 0 } : {};
-      if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine" || prev.kind === "measure") {
+      if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine" || prev.kind === "measure" || prev.kind === "movePlayer") {
         setDraft({ ...prev, points: [prev.points[0], point] });
       } else if (prev.kind === "offsideLine") {
         setDraft({ ...prev, points: [point] });

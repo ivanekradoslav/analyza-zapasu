@@ -58,7 +58,7 @@ Project 1---* Clip (inPoint/outPoint, voliteľne sourceTagEventId)
 Project 1---* Playlist (clipIds: string[] – poradie je poradie prehrávania/exportu)
 ```
 
-Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight | offsideLine | measure`),
+Shape je discriminated union (`arrow | line | dashedLine | ellipse | polyline | zone | text | spotlight | offsideLine | measure | movePlayer`),
 `spotlight` = svetelný kužeľ zhora na hráča (úzky vysoko – 7× polomer – a k zemi
 sa rozširuje, pri nohách svetlo na tráve bez obrysu; voliteľný štítok `label`
 pod hráčom, napr. zo súpisky; `center`/`radiusX/Y` = miesto dopadu pri nohách),
@@ -92,6 +92,13 @@ Drawing má `mode`:
 - Nové tvary: `offsideLine` (1 bod; čiara y=konšt. cez celé ihrisko po 4 m úsekoch,
   vynechá úseky za horizontom) a `measure` (2 body + popisok v metroch).
   Oba nástroje sú v toolbare vypnuté bez nastaveného ihriska.
+- `movePlayer` (nástroj „Pohyb“): krúžok hráča → prerušovaná dráha → „duch“ na cieli
+  (+ metre pri ihrisku). Animuje sa: `drawShapesOnCanvas(..., { elapsedSec })`, duch prejde
+  dráhu za `MOVE_PLAYER_ANIM_SEC`; bez elapsedSec = konečný stav (editor, ffmpeg export).
+  Prehrávanie: `DrawingCanvas animate` (rAF + setTimeout na konečný stav), WebCodecs export
+  skladá prvé snímky freeze zvlášť.
+- Línia (`polyline`) s `showDistances` (store `lineDistances`, zaškrtávadlo v karte Ihrisko 3D)
+  ukazuje metre medzi susednými bodmi; `zone` na tráve = šrafovaná výplň + krúžky v rohoch.
 - Editor: karta „Ihrisko 3D“ → `CalibrationOverlay` (SVG, 4 úchyty, žltá mriežka po 5 m
   ako kontrola, prekrížený štvoruholník = červená). `drawShapesOnCanvas(..., calibration,
   {clear})`; viac kresieb naraz (pohyblivé + freeze, export) sa kreslí po vrstvách

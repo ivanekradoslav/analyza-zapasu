@@ -82,7 +82,8 @@ export function drawShapesOnCanvas(
   width: number,
   height: number,
   calibration?: PitchCalibration | null,
-  options: { clear?: boolean } = {}
+  // elapsedSec = čas od zobrazenia kresby (animácia presunu hráča); bez neho sa kreslí konečný stav
+  options: { clear?: boolean; elapsedSec?: number } = {}
 ) {
   if (options.clear !== false) ctx.clearRect(0, 0, width, height);
   const refUnit = Math.min(width, height);
@@ -96,7 +97,18 @@ export function drawShapesOnCanvas(
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    if (proj && (shape.ground || shape.kind === "offsideLine") && drawGroundShape(ctx, shape, proj, width, height)) {
+    if (shape.kind === "movePlayer") {
+      drawMovePlayer(ctx, shape.points, shape.ground ? proj : null, width, height, options.elapsedSec);
+      ctx.restore();
+      continue;
+    }
+
+    const onGround = !!proj && (!!shape.ground || shape.kind === "offsideLine") && drawGroundShape(ctx, shape, proj, width, height);
+    const distances = () => {
+      if (proj && shape.kind === "polyline" && shape.showDistances) drawSegmentDistances(ctx, shape.points, proj, width, height);
+    };
+    if (onGround) {
+      distances();
       ctx.restore();
       continue;
     }
@@ -194,7 +206,116 @@ export function drawShapesOnCanvas(
         break;
       }
     }
+    distances();
     ctx.restore();
+  }
+}
+
+// ---------- Presun hráča a vzdialenosti v línii ----------
+
+/** Ako dlho sa „duch“ hráča presúva na cieľové miesto, keď sa kresba objaví. */
+export const MOVE_PLAYER_ANIM_SEC = 1.4;
+
+function easeInOut(t: number) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, h: number) {
+  const fontPx = Math.max(11, h * 0.024);
+  ctx.save();
+  ctx.font = "700 " + fontPx + "px ui-sans-serif, system-ui, sans-serif";
+  const bw = ctx.measureText(text).width + fontPx * 0.8;
+  const bh = fontPx * 1.4;
+  ctx.fillStyle = "rgba(15, 23, 20, 0.85)";
+  ctx.beginPath();
+  ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, bh / 2.5);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawSegmentDistances(ctx: CanvasRenderingContext2D, pts: Point[], proj: PitchProjection, w: number, h: number) {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const m = pitchDistance(proj, pts[i], pts[i + 1]);
+    if (m === null) continue;
+    const x = ((pts[i].x + pts[i + 1].x) / 2) * w;
+    const y = ((pts[i].y + pts[i + 1].y) / 2) * h;
+    label(ctx, formatMeters(m), x, y - Math.max(10, h * 0.022), h);
+  }
+}
+
+/**
+ * Presun hráča: plný krúžok tam, kde hráč je, prerušovaná dráha a „duch“ (prerušovaný krúžok
+ * so šípkou) tam, kde mal byť. Pri animácii sa duch presúva po dráhe.
+ */
+function drawMovePlayer(
+  ctx: CanvasRenderingContext2D,
+  pts: [Point, Point],
+  proj: PitchProjection | null,
+  w: number,
+  h: number,
+  elapsedSec?: number
+) {
+  const f = elapsedSec === undefined ? 1 : easeInOut(Math.min(1, Math.max(0, elapsedSec / MOVE_PLAYER_ANIM_SEC)));
+  const lw = ctx.lineWidth;
+  const a = pts[0], b = pts[1];
+  const ghost = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+
+  // krúžok hráča (na tráve v perspektíve, inak plochá elipsa)
+  const ring = (p: Point, dashed: boolean, alpha: number) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.setLineDash(dashed ? [lw * 1.6, lw * 1.2] : []);
+    const c = proj?.toPitch(p);
+    const poly = c ? polyPx(proj!, circleOnPitch(c, 0.9, 40), w, h) : null;
+    if (poly) {
+      pathPoly(ctx, poly);
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(p.x * w, p.y * h, Math.max(8, w * 0.016), Math.max(4, w * 0.016 * 0.4), 0, 0, Math.PI * 2);
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.22;
+    ctx.fill();
+    ctx.restore();
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // dráha: celá slabo, prejdená časť naplno
+  const path = (from: Point, to: Point, alpha: number) => {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.setLineDash([lw * 2.2, lw * 1.6]);
+    ctx.beginPath();
+    ctx.moveTo(from.x * w, from.y * h);
+    ctx.lineTo(to.x * w, to.y * h);
+    ctx.stroke();
+    ctx.restore();
+  };
+  path(a, b, 0.35);
+  path(a, ghost, 1);
+  ring(a, false, 1);
+  if (f > 0.02) {
+    ring(ghost, true, 1);
+    // malá šípka pri duchovi v smere pohybu
+    const ang = Math.atan2((b.y - a.y) * h, (b.x - a.x) * w);
+    const gx = ghost.x * w, gy = ghost.y * h;
+    const head = Math.max(8, lw * 3.2);
+    ctx.beginPath();
+    ctx.moveTo(gx + Math.cos(ang) * head, gy + Math.sin(ang) * head);
+    ctx.lineTo(gx + Math.cos(ang + 2.5) * head * 0.8, gy + Math.sin(ang + 2.5) * head * 0.8);
+    ctx.lineTo(gx + Math.cos(ang - 2.5) * head * 0.8, gy + Math.sin(ang - 2.5) * head * 0.8);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // pri nastavenom ihrisku: koľko metrov mal hráč prebehnúť
+  if (proj && f >= 1) {
+    const m = pitchDistance(proj, a, b);
+    if (m !== null) label(ctx, formatMeters(m), ((a.x + b.x) / 2) * w, ((a.y + b.y) / 2) * h - Math.max(10, h * 0.022), h);
   }
 }
 
@@ -356,6 +477,38 @@ function drawGroundShape(ctx: CanvasRenderingContext2D, shape: Shape, proj: Pitc
         pathPoly(ctx, ring);
         ctx.fill();
         ctx.restore();
+        pathPoly(ctx, ring);
+        ctx.stroke();
+      }
+      return true;
+    }
+    case "zone": {
+      // formačná zóna: šrafovaná výplň a krúžky na tráve v rohoch (pri hráčoch)
+      if (shape.points.length < 3) return false;
+      const pts = shape.points.map((p) => ({ x: p.x * w, y: p.y * h }));
+      ctx.save();
+      pathPoly(ctx, pts);
+      ctx.globalAlpha = shape.fillOpacity * 0.8;
+      ctx.fill();
+      ctx.clip();
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = Math.max(1.5, ctx.lineWidth * 0.6);
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+      const step = Math.max(8, h * 0.018);
+      ctx.beginPath();
+      for (let x = minX - (maxY - minY); x < maxX; x += step) {
+        ctx.moveTo(x, maxY);
+        ctx.lineTo(x + (maxY - minY), minY);
+      }
+      ctx.stroke();
+      ctx.restore();
+      pathPoly(ctx, pts);
+      ctx.stroke();
+      for (const p of shape.points) {
+        const c = proj.toPitch(p);
+        const ring = c && polyPx(proj, circleOnPitch(c, 0.8, 36), w, h);
+        if (!ring) continue;
         pathPoly(ctx, ring);
         ctx.stroke();
       }

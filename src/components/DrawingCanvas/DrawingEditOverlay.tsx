@@ -54,14 +54,16 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   const setStrokeWidth = useAppStore((s) => s.setActiveStrokeWidth);
   const drawOnGround = useAppStore((s) => s.drawOnGround);
   const setDrawOnGround = useAppStore((s) => s.setDrawOnGround);
+  const lineDistances = useAppStore((s) => s.lineDistances);
+  const setLineDistances = useAppStore((s) => s.setLineDistances);
   const setLastCalibration = useAppStore((s) => s.setLastCalibration);
 
   // ihrisko 3D: uložená kalibrácia kresby a rozpracovaná pri nastavovaní
   const [calibration, setCalibration] = useState<PitchCalibration | null>(null);
   const [calibDraft, setCalibDraft] = useState<PitchCalibration | null>(null);
   const projection = useMemo(() => makeProjection(calibration), [calibration]);
-  const groundRef = useRef({ proj: projection, ground: drawOnGround });
-  groundRef.current = { proj: projection, ground: drawOnGround };
+  const groundRef = useRef({ proj: projection, ground: drawOnGround, lineDistances });
+  groundRef.current = { proj: projection, ground: drawOnGround, lineDistances };
 
   const updateKeyframes = useCallback((fn: (k: Keyframe[]) => Keyframe[]) => {
     const next = fn(keyframesRef.current);
@@ -289,6 +291,10 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
     hint = "Nastavuješ ihrisko — posuň 4 body na rohy obdĺžnika na tráve, potom Hotovo.";
   } else if (activeTool === "offsideLine") {
     hint = "Klikni na hráča (napr. posledného obrancu) — čiara pôjde cez celé ihrisko rovnobežne s bránkovou čiarou.";
+  } else if (activeTool === "movePlayer") {
+    hint = calibration
+      ? "Ťahaj od hráča tam, kde mal byť — pri prehrávaní sa „duch“ hráča presunie a ukáže sa vzdialenosť v metroch."
+      : "Ťahaj od hráča tam, kde mal byť — pri prehrávaní sa „duch“ hráča presunie na nové miesto.";
   } else if (activeTool === "measure") {
     hint = "Ťahaj od jedného bodu na tráve k druhému — ukáže sa vzdialenosť v metroch.";
   } else if (activeTool === "move") {
@@ -398,6 +404,8 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
             onCalibrationDims={(patch) => setCalibDraft((c) => (c ? { ...c, ...patch } : c))}
             drawOnGround={drawOnGround}
             onDrawOnGroundChange={setDrawOnGround}
+            lineDistances={lineDistances}
+            onLineDistancesChange={setLineDistances}
           />,
           toolbarSlot
         )}

@@ -30,6 +30,7 @@ function lerpShape(a: Shape, b: Shape, f: number): Shape {
     case "line":
     case "dashedLine":
     case "measure":
+    case "movePlayer":
       if (b.kind !== a.kind) return a;
       return { ...a, points: lerpPoints(a.points, b.points, f) as [Point, Point] };
     case "offsideLine":

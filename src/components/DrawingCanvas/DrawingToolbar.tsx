@@ -20,6 +20,7 @@ import {
   Flag,
   Ruler,
   Grid3x3,
+  Footprints,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -33,6 +34,7 @@ const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNo
   { kind: "dashedLine", label: "Beh", title: "Prerušovaná čiara (beh)", icon: <MoreHorizontal size={18} /> },
   { kind: "spotlight", label: "Svetlo", title: "Svetelný stĺp nad hráčom so štítkom", icon: <Flashlight size={18} /> },
   { kind: "ellipse", label: "Kruh", title: "Kruh pod hráča", icon: <Circle size={18} /> },
+  { kind: "movePlayer", label: "Pohyb", title: "Pohyb hráča: odkiaľ → kam mal ísť (pri prehrávaní sa presunie)", icon: <Footprints size={18} /> },
   { kind: "polyline", label: "Línia", title: "Spojnica hráčov (napr. línia obrany)", icon: <Spline size={18} /> },
   { kind: "zone", label: "Zóna", title: "Zóna", icon: <Hexagon size={18} /> },
   { kind: "text", label: "Text", title: "Text", icon: <Type size={18} /> },
@@ -92,6 +94,8 @@ interface Props {
   onCalibrationDims: (patch: Partial<Pick<PitchCalibration, "widthM" | "depthM" | "presetId">>) => void;
   drawOnGround: boolean;
   onDrawOnGroundChange: (v: boolean) => void;
+  lineDistances: boolean;
+  onLineDistancesChange: (v: boolean) => void;
 }
 
 function formatDim(n: number) {
@@ -170,6 +174,10 @@ function PitchCard(props: Props) {
           <label className="flex items-center gap-2 text-sm text-gray-200">
             <input type="checkbox" checked={props.drawOnGround} onChange={(e) => props.onDrawOnGroundChange(e.target.checked)} />
             Kresliť na trávu (perspektíva)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-200">
+            <input type="checkbox" checked={props.lineDistances} onChange={(e) => props.onLineDistancesChange(e.target.checked)} />
+            Línia: vzdialenosti medzi hráčmi
           </label>
           <div className="grid grid-cols-2 gap-1">
             <button className={smallBtn} onClick={props.onStartCalibration}>

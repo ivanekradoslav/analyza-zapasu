@@ -51,6 +51,9 @@ interface AppState {
   // kresliť nové tvary „na trávu“, keď je ihrisko nastavené
   drawOnGround: boolean;
   setDrawOnGround: (v: boolean) => void;
+  // nová línia hráčov ukáže vzdialenosti v metroch (pri nastavenom ihrisku)
+  lineDistances: boolean;
+  setLineDistances: (v: boolean) => void;
 
   // Freeze-frame prehrávanie kresieb
   frozenDrawingId: string | null;
@@ -116,6 +119,8 @@ export const useAppStore = create<AppState>((set) => ({
   setLastCalibration: (c) => set({ lastCalibration: c }),
   drawOnGround: true,
   setDrawOnGround: (v) => set({ drawOnGround: v }),
+  lineDistances: true,
+  setLineDistances: (v) => set({ lineDistances: v }),
 
   frozenDrawingId: null,
   setFrozenDrawingId: (id) => set({ frozenDrawingId: id }),

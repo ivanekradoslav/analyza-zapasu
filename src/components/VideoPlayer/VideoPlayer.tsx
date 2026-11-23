@@ -244,6 +244,7 @@ export default function VideoPlayer({ projectId }: { projectId: string }) {
                 height={rect.height}
                 shapes={frozenDrawing.shapes}
                 calibration={frozenDrawing.calibration}
+                animate
                 draft={null}
                 editable={false}
                 activeTool="arrow"

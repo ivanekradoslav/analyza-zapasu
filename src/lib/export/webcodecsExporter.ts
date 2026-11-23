@@ -18,8 +18,8 @@ import {
   type InputAudioTrack,
   type StreamTargetChunk,
 } from "mediabunny";
-import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
-import { activeTrackLayers, drawLayers, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
+import { drawShapesOnCanvas, MOVE_PLAYER_ANIM_SEC } from "@/lib/drawing/renderShapes";
+import { activeTrackLayers, isTrackDrawing, trackWindow } from "@/lib/drawing/keyframes";
 import { drawTitleCard } from "@/lib/ffmpeg/overlayRenderer";
 import { buildTitleLines, ExportCancelled, type ExportInput, type ExportProgress } from "@/lib/ffmpeg/exporter";
 import type { Drawing } from "@/types";
@@ -197,19 +197,21 @@ export class WebCodecsExporter {
       const shiftAt = (t: number) => freezes.reduce((s, f) => (f.ts <= t ? s + f.drawing.durationSec : s), 0);
       const outTime = (t: number) => base + (t - clip.inPoint) + shiftAt(t);
 
-      const compose = (frame: CanvasImageSource, srcT: number, freeze: Drawing | null) => {
+      const compose = (frame: CanvasImageSource, srcT: number, freeze: Drawing | null, freezeElapsed?: number) => {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, W, H);
         ctx.drawImage(frame, rectX, rectY, rectW, rectH);
         // každá kresba má vlastnú perspektívu ihriska, preto sa kreslí po vrstvách
         const layers = [
           ...(clipTracks.length ? activeTrackLayers(clipTracks, srcT) : []),
-          ...(freeze ? [{ shapes: freeze.shapes, calibration: freeze.calibration }] : []),
+          ...(freeze ? [{ shapes: freeze.shapes, calibration: freeze.calibration, freeze: true }] : []),
         ].filter((l) => l.shapes.length > 0);
         if (layers.length) {
-          drawLayers(
-            (shapes, calibration, clear) => drawShapesOnCanvas(overlayCtx, shapes, rectW, rectH, calibration, { clear }),
-            layers
+          layers.forEach((l, i) =>
+            drawShapesOnCanvas(overlayCtx, l.shapes, rectW, rectH, l.calibration, {
+              clear: i === 0,
+              ...("freeze" in l ? { elapsedSec: freezeElapsed } : {}),
+            })
           );
           ctx.drawImage(overlay, rectX, rectY);
         }
@@ -231,11 +233,16 @@ export class WebCodecsExporter {
             compose(wrapped.canvas, segStart, null);
             lastVideoEnd = await addFrame(videoSource, outTime(segStart), fts - segStart, lastVideoEnd);
           }
-          compose(wrapped.canvas, fts, f.drawing);
+          // presun hráča sa animuje → prvé snímky freeze sa skladajú zvlášť, potom ostáva konečný stav
+          const animated = f.drawing.shapes.some((s) => s.kind === "movePlayer");
           const freezeStart = base + (fts - clip.inPoint) + shiftAt(fts) - f.drawing.durationSec;
           const n = Math.max(1, Math.round(f.drawing.durationSec * FREEZE_FPS));
           for (let k = 0; k < n; k++) {
             this.checkCancelled();
+            const el = k / FREEZE_FPS;
+            if (k === 0 || (animated && el <= MOVE_PLAYER_ANIM_SEC + 1 / FREEZE_FPS)) {
+              compose(wrapped.canvas, fts, f.drawing, animated ? el : undefined);
+            }
             lastVideoEnd = await addFrame(videoSource, freezeStart + k / FREEZE_FPS, 1 / FREEZE_FPS, lastVideoEnd);
           }
           segStart = fts;

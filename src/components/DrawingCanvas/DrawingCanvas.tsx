@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { drawShapesOnCanvas } from "@/lib/drawing/renderShapes";
+import { drawShapesOnCanvas, MOVE_PLAYER_ANIM_SEC } from "@/lib/drawing/renderShapes";
 import { controlPoints } from "@/lib/drawing/shapeGeometry";
 import type { DrawTool, PitchCalibration, Point, Shape } from "@/types";
 
@@ -16,6 +16,8 @@ interface Props {
   onPointerMovePoint?: (p: Point) => void;
   onPointerUpPoint?: () => void;
   onDoubleClick?: () => void;
+  /** Prehrávanie: animovať presun hráča od momentu zobrazenia. */
+  animate?: boolean;
 }
 
 export default function DrawingCanvas({
@@ -31,6 +33,7 @@ export default function DrawingCanvas({
   onPointerMovePoint,
   onPointerUpPoint,
   onDoubleClick,
+  animate,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const showHandles = editable && activeTool === "move";
@@ -44,7 +47,25 @@ export default function DrawingCanvas({
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    drawShapesOnCanvas(ctx, draft ? [...shapes, draft] : shapes, width, height, calibration);
+    const all = draft ? [...shapes, draft] : shapes;
+
+    if (animate && !editable && all.some((s) => s.kind === "movePlayer")) {
+      const start = performance.now();
+      let raf = 0;
+      const frame = () => {
+        const el = (performance.now() - start) / 1000;
+        drawShapesOnCanvas(ctx, all, width, height, calibration, { elapsedSec: el });
+        if (el < MOVE_PLAYER_ANIM_SEC) raf = requestAnimationFrame(frame);
+      };
+      frame();
+      // keď prehliadač rAF obmedzí (okno na pozadí), aspoň konečný stav
+      const done = window.setTimeout(() => drawShapesOnCanvas(ctx, all, width, height, calibration), MOVE_PLAYER_ANIM_SEC * 1000 + 80);
+      return () => {
+        cancelAnimationFrame(raf);
+        window.clearTimeout(done);
+      };
+    }
+    drawShapesOnCanvas(ctx, all, width, height, calibration);
 
     if (showHandles) {
       for (const shape of shapes) {
@@ -60,7 +81,7 @@ export default function DrawingCanvas({
         }
       }
     }
-  }, [shapes, draft, width, height, showHandles, selectedId, calibration]);
+  }, [shapes, draft, width, height, showHandles, selectedId, calibration, animate, editable]);
 
   function toNormalized(e: React.PointerEvent): Point {
     const rect = canvasRef.current!.getBoundingClientRect();
