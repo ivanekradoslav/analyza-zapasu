@@ -25,7 +25,7 @@ import {
 import clsx from "clsx";
 
 // nástroje, ktoré potrebujú nastavené ihrisko (perspektívu)
-const NEEDS_PITCH: DrawTool[] = ["offsideLine", "measure"];
+const NEEDS_PITCH: DrawTool[] = ["measure"];
 
 const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNode }[] = [
   { kind: "move", label: "Presunúť", title: "Chyť tvar alebo jeho bod a potiahni", icon: <Move size={18} /> },
@@ -38,8 +38,8 @@ const TOOLS: { kind: DrawTool; label: string; title: string; icon: React.ReactNo
   { kind: "polyline", label: "Línia", title: "Spojnica hráčov (napr. línia obrany)", icon: <Spline size={18} /> },
   { kind: "zone", label: "Zóna", title: "Zóna", icon: <Hexagon size={18} /> },
   { kind: "text", label: "Text", title: "Text", icon: <Type size={18} /> },
-  { kind: "offsideLine", label: "Ofsajd", title: "Čiara cez celé ihrisko rovnobežne s bránkovou čiarou (potrebuje nastavené ihrisko)", icon: <Flag size={18} /> },
-  { kind: "measure", label: "Meter", title: "Vzdialenosť dvoch bodov v metroch (potrebuje nastavené ihrisko)", icon: <Ruler size={18} /> },
+  { kind: "offsideLine", label: "Ofsajd", title: "Čiara cez celé ihrisko rovnobežne s bránkovou čiarou", icon: <Flag size={18} /> },
+  { kind: "measure", label: "Meter", title: "Vzdialenosť dvoch bodov v metroch (potrebuje presné ihrisko – 4 body)", icon: <Ruler size={18} /> },
 ];
 
 const COLORS = ["#ef4444", "#3b82f6", "#eab308", "#22c55e", "#ffffff", "#a855f7", "#f97316"];
@@ -96,6 +96,8 @@ interface Props {
   onDrawOnGroundChange: (v: boolean) => void;
   lineDistances: boolean;
   onLineDistancesChange: (v: boolean) => void;
+  cameraTilt: number;
+  onCameraTiltChange: (t: number) => void;
 }
 
 function formatDim(n: number) {
@@ -165,37 +167,55 @@ function PitchCard(props: Props) {
   }
   return (
     <div className="card p-3 space-y-2">
-      <h3 className={sectionTitle}>Ihrisko 3D</h3>
+      <h3 className={sectionTitle}>Kreslenie na trávu</h3>
+      <label className="flex items-center gap-2 text-sm text-gray-200">
+        <input type="checkbox" checked={props.drawOnGround} onChange={(e) => props.onDrawOnGroundChange(e.target.checked)} />
+        Kruhy, svetlo a šípky ležia na tráve
+      </label>
       {c ? (
         <>
           <p className="text-xs text-gray-400">
-            Nastavené podľa obdĺžnika {formatDim(c.widthM)} × {formatDim(c.depthM)} m.
+            Presné ihrisko podľa obdĺžnika {formatDim(c.widthM)} × {formatDim(c.depthM)} m — funguje meranie v metroch.
           </p>
-          <label className="flex items-center gap-2 text-sm text-gray-200">
-            <input type="checkbox" checked={props.drawOnGround} onChange={(e) => props.onDrawOnGroundChange(e.target.checked)} />
-            Kresliť na trávu (perspektíva)
-          </label>
           <label className="flex items-center gap-2 text-sm text-gray-200">
             <input type="checkbox" checked={props.lineDistances} onChange={(e) => props.onLineDistancesChange(e.target.checked)} />
             Línia: vzdialenosti medzi hráčmi
           </label>
           <div className="grid grid-cols-2 gap-1">
             <button className={smallBtn} onClick={props.onStartCalibration}>
-              <Grid3x3 size={13} /> Upraviť
+              <Grid3x3 size={13} /> Upraviť body
             </button>
             <button className={smallBtn} onClick={props.onRemoveCalibration}>
-              <X size={13} /> Zrušiť ihrisko
+              <X size={13} /> Späť na automatickú
             </button>
           </div>
         </>
       ) : (
         <>
-          <p className="text-xs text-gray-400">
-            Prilož 4 rohy šestnástky (alebo iného obdĺžnika na tráve) — kruhy, svetlo a šípky potom ležia na tráve, pribudne
-            ofsajdová čiara a meranie v metroch.
+          <label className="block space-y-1 text-xs text-gray-400">
+            <span className="flex justify-between">
+              <span>Uhol kamery</span>
+              <span className="text-gray-500">platí pre celý zápas</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={props.cameraTilt}
+              onChange={(e) => props.onCameraTiltChange(Number(e.target.value))}
+              className="w-full"
+            />
+            <span className="flex justify-between text-[11px] text-gray-500">
+              <span>zhora</span>
+              <span>zboku</span>
+            </span>
+          </label>
+          <p className="text-[11px] text-gray-500">
+            Nakresli kruh pod hráča vpredu aj vzadu a posuvníkom dolaď, kým nesedia na tráve.
           </p>
-          <button className="btn-secondary w-full" onClick={props.onStartCalibration}>
-            <Grid3x3 size={15} /> Nastaviť ihrisko
+          <button className={clsx(smallBtn, "w-full")} onClick={props.onStartCalibration} title="Prilož 4 rohy šestnástky – potom funguje meranie v metroch">
+            <Grid3x3 size={13} /> Presné metre (4 body ihriska)
           </button>
         </>
       )}

@@ -82,6 +82,14 @@ Drawing má `mode`:
   šestnástka 40,32×16,5, malé vápno 18,32×5,5, vlastné (žiacke ihriská sú menšie).
 - Z toho homografia (DLT, 4 body, Gauss) ihrisko v metroch ↔ normalizovaný obraz
   (`makeProjection` → `toImage`/`toPitch`; `apply` vracia null pre body za kamerou).
+- **Predvolene automatická perspektíva bez klikania** (`autoCalibration(tilt)`, `auto: true`):
+  lichobežník odvodený z typického záberu Veo (mierka na tráve lineárne klesá k horizontu,
+  kalibrované na zázname U13: 0,057 šírky obrazu na meter vo výške 70 %). Jediný parameter =
+  `Project.cameraTilt` (posuvník „Uhol kamery“, platí pre celý zápas, posúva horizont).
+  Pri `auto` sa **neukazujú metre** (meranie, vzdialenosti v línii, pohyb) – sú len odhad;
+  nástroj Meter vyžaduje presné ihrisko. Blízko horizontu (> 1,2 m na 1 % šírky obrazu)
+  sa tvar kreslí naplocho, polomer na tráve max 12 m. Uložená kresba si nesie svoju kalibráciu.
+- Presné ihrisko (4 body) je voliteľný doplnok pre metre.
 - Kalibrácia je **na kresbe, nie na projekte** – kamera Veo sa hýbe a zoomuje, perspektíva
   platí len pre daný záber. `store.lastCalibration` je len východisko pre ďalšie nastavenie.
   Pohyblivá kresba má jednu kalibráciu pre všetky kľúčové body (sedí len pri statickej kamere).

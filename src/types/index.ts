@@ -15,6 +15,7 @@ export interface Project {
   date: string; // ISO date (yyyy-mm-dd)
   competition: string;
   videoFileName?: string;
+  cameraTilt?: number; // uhol kamery pre automatickú perspektívu kresieb (0 = zhora, 1 = silno zboku)
   createdAt: number;
   updatedAt: number;
 }
@@ -167,6 +168,7 @@ export interface PitchCalibration {
   widthM: number; // vzdialenosť 1→2 (pozdĺž bránkovej čiary)
   depthM: number; // vzdialenosť 2→3 (do ihriska)
   presetId?: string;
+  auto?: boolean; // odhad z uhla kamery (bez klikania bodov) — metre sú len približné, preto sa neukazujú
 }
 
 export interface Drawing {

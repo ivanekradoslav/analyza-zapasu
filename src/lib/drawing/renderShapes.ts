@@ -105,7 +105,7 @@ export function drawShapesOnCanvas(
 
     const onGround = !!proj && (!!shape.ground || shape.kind === "offsideLine") && drawGroundShape(ctx, shape, proj, width, height);
     const distances = () => {
-      if (proj && shape.kind === "polyline" && shape.showDistances) drawSegmentDistances(ctx, shape.points, proj, width, height);
+      if (proj && !proj.calibration.auto && shape.kind === "polyline" && shape.showDistances) drawSegmentDistances(ctx, shape.points, proj, width, height);
     };
     if (onGround) {
       distances();
@@ -190,7 +190,7 @@ export function drawShapesOnCanvas(
         break;
       }
       case "measure":
-        drawMeasure(ctx, shape.points, width, height, proj ? pitchDistance(proj, shape.points[0], shape.points[1]) : null);
+        drawMeasure(ctx, shape.points, width, height, proj && !proj.calibration.auto ? pitchDistance(proj, shape.points[0], shape.points[1]) : null);
         break;
       case "text": {
         const fontPx = (shape.fontSize / 100) * height;
@@ -313,7 +313,7 @@ function drawMovePlayer(
     ctx.fill();
   }
   // pri nastavenom ihrisku: koľko metrov mal hráč prebehnúť
-  if (proj && f >= 1) {
+  if (proj && !proj.calibration.auto && f >= 1) {
     const m = pitchDistance(proj, a, b);
     if (m !== null) label(ctx, formatMeters(m), ((a.x + b.x) / 2) * w, ((a.y + b.y) / 2) * h - Math.max(10, h * 0.022), h);
   }

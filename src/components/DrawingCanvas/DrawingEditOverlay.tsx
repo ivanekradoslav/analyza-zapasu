@@ -10,7 +10,14 @@ import CalibrationOverlay from "@/components/DrawingCanvas/CalibrationOverlay";
 import { useAppStore } from "@/store/useAppStore";
 import { findDrawingForEdit, upsertDrawing, deleteDrawing } from "@/lib/db/operations";
 import { isTrackDrawing, KEYFRAME_EPSILON, removeKeyframeAt, shapesAtTime, upsertKeyframe } from "@/lib/drawing/keyframes";
-import { DEFAULT_CORNERS, isConvexQuad, makeProjection, PITCH_PRESETS } from "@/lib/drawing/pitch";
+import {
+  autoCalibration,
+  DEFAULT_CAMERA_TILT,
+  DEFAULT_CORNERS,
+  isConvexQuad,
+  makeProjection,
+  PITCH_PRESETS,
+} from "@/lib/drawing/pitch";
 import { newId } from "@/lib/utils/id";
 import type { Drawing, DrawingMode, Keyframe, PitchCalibration, Point, Shape } from "@/types";
 
@@ -61,7 +68,12 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
   // ihrisko 3D: uložená kalibrácia kresby a rozpracovaná pri nastavovaní
   const [calibration, setCalibration] = useState<PitchCalibration | null>(null);
   const [calibDraft, setCalibDraft] = useState<PitchCalibration | null>(null);
-  const projection = useMemo(() => makeProjection(calibration), [calibration]);
+  // bez presného nastavenia (4 body) platí automatická perspektíva podľa uhla kamery zápasu
+  const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
+  const cameraTilt = project?.cameraTilt ?? DEFAULT_CAMERA_TILT;
+  const autoCalib = useMemo(() => autoCalibration(cameraTilt), [cameraTilt]);
+  const effectiveCalibration = calibration ?? autoCalib;
+  const projection = useMemo(() => makeProjection(effectiveCalibration), [effectiveCalibration]);
   const groundRef = useRef({ proj: projection, ground: drawOnGround, lineDistances });
   groundRef.current = { proj: projection, ground: drawOnGround, lineDistances };
 
@@ -124,7 +136,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
       setExisting(d ?? null);
       if (!d) return;
       setDurationSec(d.durationSec);
-      setCalibration(d.calibration ?? null);
+      setCalibration(d.calibration && !d.calibration.auto ? d.calibration : null);
       if (isTrackDrawing(d)) {
         switchMode("track");
         keyframesRef.current = d.keyframes;
@@ -256,7 +268,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
       id: existing?.id ?? newId(),
       projectId,
       durationSec,
-      ...(calibration ? { calibration } : {}),
+      calibration: effectiveCalibration,
       createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
     };
@@ -320,7 +332,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
           width={rect.width}
           height={rect.height}
           shapes={editor.shapes}
-          calibration={calibration}
+          calibration={effectiveCalibration}
           draft={editor.draft}
           editable
           activeTool={activeTool}
@@ -390,6 +402,8 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
               if (p) applyLabel(playerLabel(p));
             }}
             calibration={calibDraft ?? calibration}
+            cameraTilt={cameraTilt}
+            onCameraTiltChange={(t) => void db.projects.update(projectId, { cameraTilt: t })}
             calibrating={!!calibDraft}
             onStartCalibration={startCalibration}
             onFinishCalibration={finishCalibration}
@@ -399,7 +413,7 @@ export default function DrawingEditOverlay({ projectId, rect, toolbarSlot, onClo
             }}
             onRemoveCalibration={() => {
               setCalibration(null);
-              if (activeTool === "offsideLine" || activeTool === "measure") setActiveTool("arrow");
+              if (activeTool === "measure") setActiveTool("arrow");
             }}
             onCalibrationDims={(patch) => setCalibDraft((c) => (c ? { ...c, ...patch } : c))}
             drawOnGround={drawOnGround}

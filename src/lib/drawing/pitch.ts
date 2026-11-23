@@ -31,6 +31,40 @@ export const DEFAULT_CORNERS: [Point, Point, Point, Point] = [
   { x: 0.18, y: 0.72 },
 ];
 
+export const DEFAULT_CAMERA_TILT = 0.7;
+
+/**
+ * Automatická perspektíva bez klikania, odvodená z typického záberu Veo (kamera zboku, zvýšene):
+ * mierka na tráve klesá lineárne smerom k horizontu (perspektíva roviny). Kalibrované na zázname
+ * U13: hráč vo výške 70 % obrazu má ~1,5 m ≈ 110 px pri 1280 px šírke → 0,057 šírky na meter.
+ * Uhol kamery posúva horizont (0 = zhora, slabá perspektíva; 1 = silno zboku).
+ * Hrana 1→2 ide do hĺbky, takže ofsajdová čiara (rovnobežná s bránkovou) vedie od blízkej
+ * k vzdialenej postrannej čiare (pri šikmom zábere je len približná).
+ */
+export function autoCalibration(tilt: number = DEFAULT_CAMERA_TILT): PitchCalibration {
+  const t = Math.min(1, Math.max(0, tilt));
+  const yh = 0.38 * t; // horizont (normalizovaná výška)
+  const scaleAt = (y: number) => (0.057 * (y - yh)) / (0.7 - yh); // šírka obrazu na 1 m
+  const focal = 0.866; // ~60° zorné pole
+  const yNear = 1;
+  const yFar = yh + 0.25 * (1 - yh);
+  const depth = focal / scaleAt(yFar) - focal / scaleAt(yNear); // metre medzi blízkou a vzdialenou hranou
+  const along = 40; // metre pozdĺž postrannej čiary
+  const halfNear = (along / 2) * scaleAt(yNear);
+  const halfFar = (along / 2) * scaleAt(yFar);
+  return {
+    corners: [
+      { x: 0.5 - halfNear, y: yNear },
+      { x: 0.5 - halfFar, y: yFar },
+      { x: 0.5 + halfFar, y: yFar },
+      { x: 0.5 + halfNear, y: yNear },
+    ],
+    widthM: depth,
+    depthM: along,
+    auto: true,
+  };
+}
+
 /** Rieši 8×8 sústavu Gaussovou elimináciou s výberom pivota. */
 function solve(A: number[][], b: number[]): number[] | null {
   const n = b.length;

@@ -14,6 +14,7 @@ export interface GroundContext {
 // tvary, ktoré vedia ležať na tráve
 const GROUND_KINDS: ShapeKind[] = ["arrow", "line", "dashedLine", "ellipse", "spotlight", "polyline", "zone", "movePlayer"];
 const MIN_RADIUS_M = 0.3;
+const MAX_RADIUS_M = 12;
 
 const MULTI_POINT_TOOLS: ShapeKind[] = ["polyline", "zone"];
 const HANDLE_RADIUS_PX = 12;
@@ -202,7 +203,13 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround
     (tool: ShapeKind, point: Point, color: string, strokeWidth: number, label?: string) => {
       draggingRef.current = true;
       const g = getGroundRef.current?.();
-      const onGround = !!g?.proj && g.ground && GROUND_KINDS.includes(tool);
+      // blízko horizontu (stromy, oblohu) perspektíva nedáva zmysel → tam sa kreslí naplocho
+      const groundHere = (() => {
+        if (!g?.proj) return false;
+        const m = pitchDistance(g.proj, point, { x: point.x + 0.01, y: point.y });
+        return m !== null && m < 1.2;
+      })();
+      const onGround = groundHere && !!g?.ground && GROUND_KINDS.includes(tool);
       const base = { id: newId(), color, strokeWidth, ...(onGround ? { ground: true } : {}) };
       const radiusM = onGround ? { radiusM: 0 } : {};
       switch (tool) {
@@ -257,7 +264,7 @@ export function useDrawingEditor(onCommit?: (shapes: Shape[]) => void, getGround
       // na tráve: polomer v metroch = vzdialenosť od stredu po kurzor na ihrisku
       const proj = getGroundRef.current?.().proj ?? null;
       const groundRadius = (center: Point) =>
-        prev.ground && proj ? { radiusM: pitchDistance(proj, center, point) ?? 0 } : {};
+        prev.ground && proj ? { radiusM: Math.min(MAX_RADIUS_M, pitchDistance(proj, center, point) ?? 0) } : {};
       if (prev.kind === "arrow" || prev.kind === "line" || prev.kind === "dashedLine" || prev.kind === "measure" || prev.kind === "movePlayer") {
         setDraft({ ...prev, points: [prev.points[0], point] });
       } else if (prev.kind === "offsideLine") {
